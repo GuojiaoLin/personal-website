@@ -1,0 +1,38 @@
+# ---- 依赖 / 构建产物 ----
+node_modules/
+dist/
+dist.zip
+.npm-cache/
+.vite/
+*.tsbuildinfo
+
+# ---- 后端构建 / 本地 Maven 仓库 ----
+.m2/
+backend/.m2/
+backend/target/
+target/
+
+# ---- 上传 / 数据库导出（运行时数据，不进库）----
+uploads/
+backend/uploads/
+backup.sql
+*.sql.bak
+
+# ---- Codex / 自动化浏览器留下的临时文件（导致仓库膨胀的元凶）----
+.codex-*
+
+# ---- 环境变量 / 密钥 ----
+.env
+.env.*
+!.env.example
+*.local
+
+# ---- 日志 ----
+*.log
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

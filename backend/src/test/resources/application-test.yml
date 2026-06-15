@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:personal_website_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+site:
+  admin:
+    email: owner@example.com
+    password: correct-password
+  uploads:
+    directory: target/test-uploads
+    public-path: /uploads
+  gallery:
+    seed:
+      enabled: false
