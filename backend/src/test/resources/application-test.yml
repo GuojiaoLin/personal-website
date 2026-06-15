@@ -18,6 +18,9 @@ site:
   uploads:
     directory: target/test-uploads
     public-path: /uploads
+  content:
+    seed:
+      enabled: false
   gallery:
     seed:
       enabled: false

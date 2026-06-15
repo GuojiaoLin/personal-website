@@ -103,15 +103,52 @@ const fallbackPhotos: Photo[] = orderedGalleryEntries
     };
   });
 
-const photoFromGalleryRecord = (photo: GalleryPhotoRecord): Photo => ({
-  id: photo.id,
-  url: photo.url,
-  title: photo.title,
-  description: photo.description,
-  location: photo.location || '生活图册',
-  date: photo.takenAt || '2024',
-  aspectRatio: aspectRatios[Math.abs(hashPath(photo.id || photo.url)) % aspectRatios.length],
-});
+const getGalleryRecordDisplayKey = (photo: GalleryPhotoRecord) => [
+  photo.url,
+  photo.title,
+  photo.description,
+  photo.location,
+  photo.takenAt,
+].join('|');
+
+const photoFromGalleryRecord = (photo: GalleryPhotoRecord): Photo => {
+  const displayKey = getGalleryRecordDisplayKey(photo);
+
+  return {
+    id: photo.id,
+    url: photo.url,
+    title: photo.title,
+    description: photo.description,
+    location: photo.location || '生活图册',
+    date: photo.takenAt || '2024',
+    aspectRatio: aspectRatios[Math.abs(hashPath(displayKey)) % aspectRatios.length],
+  };
+};
+
+const galleryShuffleSalt = 'photography-gallery-shuffle-v1';
+
+const getGalleryShuffleKey = (photo: Photo) => [
+  photo.url,
+  photo.title,
+  photo.description,
+  photo.location,
+  photo.date,
+  photo.aspectRatio,
+].join('|');
+
+const shuffleGalleryPhotos = (items: Photo[]) => {
+  return items
+    .map((photo) => ({
+      photo,
+      score: Math.abs(hashPath(`${getGalleryShuffleKey(photo)}|${galleryShuffleSalt}`)),
+    }))
+    .sort((a, b) => (
+      a.score === b.score
+        ? getGalleryShuffleKey(a.photo).localeCompare(getGalleryShuffleKey(b.photo))
+        : a.score - b.score
+    ))
+    .map(({ photo }) => photo);
+};
 
 const getGalleryColumnCount = () => {
   if (typeof window === 'undefined') return 3;
@@ -120,11 +157,36 @@ const getGalleryColumnCount = () => {
   return 1;
 };
 
+const aspectRatioLayoutWeights: Record<string, number> = {
+  'aspect-[16/10]': 0.625,
+  'aspect-[4/3]': 0.75,
+  'aspect-[5/4]': 0.8,
+  'aspect-[1/1]': 1,
+  'aspect-[4/5]': 1.25,
+  'aspect-[3/4]': 1.33,
+  'aspect-[2/3]': 1.5,
+};
+
+const getPhotoLayoutWeight = (photo: Photo) => aspectRatioLayoutWeights[photo.aspectRatio] ?? 1;
+
+const getShortestGalleryColumnIndex = (columnHeights: number[]) => (
+  columnHeights.reduce((shortestIndex, height, index) => (
+    height < columnHeights[shortestIndex] ? index : shortestIndex
+  ), 0)
+);
+
 const distributePhotos = (items: Photo[], columnCount: number) => {
+  if (columnCount <= 0) return [];
+
   const columns = Array.from({ length: columnCount }, () => [] as Photo[]);
-  items.forEach((photo, index) => {
-    columns[index % columnCount].push(photo);
+  const columnHeights = Array.from({ length: columnCount }, () => 0);
+
+  items.forEach((photo) => {
+    const columnIndex = getShortestGalleryColumnIndex(columnHeights);
+    columns[columnIndex].push(photo);
+    columnHeights[columnIndex] += getPhotoLayoutWeight(photo);
   });
+
   return columns;
 };
 
@@ -168,7 +230,7 @@ const PhotoCard = ({
 );
 
 const Photography = () => {
-  const [photos, setPhotos] = useState<Photo[]>(fallbackPhotos);
+  const [photos, setPhotos] = useState<Photo[]>(() => shuffleGalleryPhotos(fallbackPhotos));
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [columnCount, setColumnCount] = useState(getGalleryColumnCount);
   const photoColumns = distributePhotos(photos, columnCount);
@@ -179,10 +241,10 @@ const Photography = () => {
     listGalleryPhotos()
       .then((galleryPhotos) => {
         if (!isCurrent || galleryPhotos.length === 0) return;
-        setPhotos(galleryPhotos.map(photoFromGalleryRecord));
+        setPhotos(shuffleGalleryPhotos(galleryPhotos.map(photoFromGalleryRecord)));
       })
       .catch(() => {
-        if (isCurrent) setPhotos(fallbackPhotos);
+        if (isCurrent) setPhotos(shuffleGalleryPhotos(fallbackPhotos));
       });
 
     return () => {

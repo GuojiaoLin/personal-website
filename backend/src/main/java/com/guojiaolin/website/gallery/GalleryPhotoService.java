@@ -5,6 +5,7 @@ import com.guojiaolin.website.common.NotFoundException;
 import com.guojiaolin.website.content.ContentStatus;
 import com.guojiaolin.website.gallery.dto.GalleryPhotoRequest;
 import com.guojiaolin.website.gallery.dto.GalleryPhotoResponse;
+import com.guojiaolin.website.home.HomeGallerySlotRepository;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -41,15 +42,18 @@ public class GalleryPhotoService {
   private static final Sort GALLERY_SORT = Sort.by("sortOrder").ascending().and(Sort.by("updatedAt").descending());
 
   private final GalleryPhotoRepository galleryPhotos;
+  private final HomeGallerySlotRepository homeGallerySlots;
   private final Path galleryDirectory;
   private final String publicPath;
 
   public GalleryPhotoService(
     GalleryPhotoRepository galleryPhotos,
+    HomeGallerySlotRepository homeGallerySlots,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
     this.galleryPhotos = galleryPhotos;
+    this.homeGallerySlots = homeGallerySlots;
     this.galleryDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("gallery").normalize();
     this.publicPath = normalizePublicPath(publicPath);
   }
@@ -101,7 +105,7 @@ public class GalleryPhotoService {
       photo.setMimeType(mimeType);
       photo.setSizeBytes(file.getSize());
       photo.setUrl(toPublicUrl(fileName));
-      apply(photo, request);
+      apply(photo, request, true);
 
       return GalleryPhotoResponse.from(galleryPhotos.save(photo));
     } catch (IOException error) {
@@ -114,7 +118,7 @@ public class GalleryPhotoService {
     var photo = galleryPhotos.findById(id)
       .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
 
-    apply(photo, request);
+    apply(photo, request, false);
     return GalleryPhotoResponse.from(photo);
   }
 
@@ -123,11 +127,12 @@ public class GalleryPhotoService {
     var photo = galleryPhotos.findById(id)
       .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
 
+    homeGallerySlots.findAllByGalleryPhoto(photo).forEach((slot) -> slot.setGalleryPhoto(null));
     deleteFile(photo.getFileName());
     galleryPhotos.delete(photo);
   }
 
-  private void apply(GalleryPhoto photo, GalleryPhotoRequest request) {
+  private void apply(GalleryPhoto photo, GalleryPhotoRequest request, boolean newUpload) {
     var title = clean(request.title());
     if (!StringUtils.hasText(title)) {
       throw new BadRequestException("Gallery photo title is required.");
@@ -137,8 +142,20 @@ public class GalleryPhotoService {
     photo.setDescription(clean(request.description()));
     photo.setLocation(clean(request.location()));
     photo.setTakenAt(clean(request.takenAt()));
-    photo.setSortOrder(request.sortOrder() == null ? 0 : request.sortOrder());
+    photo.setSortOrder(resolveSortOrder(photo, request, newUpload));
     photo.setStatus(request.status() == null ? ContentStatus.DRAFT : request.status());
+  }
+
+  private int resolveSortOrder(GalleryPhoto photo, GalleryPhotoRequest request, boolean newUpload) {
+    if (request.sortOrder() != null && request.sortOrder() > 0) {
+      return request.sortOrder();
+    }
+
+    if (!newUpload && photo.getSortOrder() > 0) {
+      return photo.getSortOrder();
+    }
+
+    return galleryPhotos.findMaxSortOrder() + 1;
   }
 
   private void deleteFile(String fileName) {

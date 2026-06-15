@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { loginAdmin } from '../lib/adminApi';
+import { getAdminNavigationState } from '../lib/adminNavigation';
 import { getActiveResumeVersion } from '../lib/resumeApi';
 import { useSiteAdmin } from '../lib/siteAdmin';
 import { getApiUrl } from '../lib/siteApi';
@@ -15,6 +16,12 @@ type DownloadDialogState = {
   status: 'success' | 'error';
   title: string;
   message: string;
+};
+
+const adminNavIconMap = {
+  loader: Loader2,
+  shield: Shield,
+  login: LogIn,
 };
 
 const Navigation = ({ onDownload, isDownloading }: { onDownload: () => void; isDownloading: boolean }) => {
@@ -27,7 +34,9 @@ const Navigation = ({ onDownload, isDownloading }: { onDownload: () => void; isD
   const [adminLoginError, setAdminLoginError] = React.useState('');
   const location = useLocation();
   const navigate = useNavigate();
-  const { isOwner, refreshAdmin } = useSiteAdmin();
+  const { isAuthReady, isOwner, refreshAdmin } = useSiteAdmin();
+  const adminNavState = getAdminNavigationState({ isAuthReady, isOwner });
+  const AdminNavIcon = adminNavIconMap[adminNavState.icon];
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -42,7 +51,7 @@ const Navigation = ({ onDownload, isDownloading }: { onDownload: () => void; isD
     { name: '摄影作品', path: '/photography', icon: Camera },
     { name: '留言', path: '/conversation', icon: MessageCircle },
     { name: '关于我', path: '/about', icon: User },
-    { name: isOwner ? '进入后台' : '站主登录', path: '/admin', icon: isOwner ? Shield : LogIn, requiresLogin: true },
+    { name: adminNavState.label, path: '/admin', icon: AdminNavIcon, requiresLogin: true },
   ];
 
   const getAdminPathWithReturn = () => {
@@ -53,6 +62,8 @@ const Navigation = ({ onDownload, isDownloading }: { onDownload: () => void; isD
   };
 
   const openAdminLogin = () => {
+    if (!adminNavState.canUseAction) return;
+
     setIsOpen(false);
 
     if (isOwner) {
@@ -131,11 +142,13 @@ const Navigation = ({ onDownload, isDownloading }: { onDownload: () => void; isD
                     key={item.path}
                     type="button"
                     variant="ghost"
-                    aria-haspopup={isOwner ? undefined : 'dialog'}
+                    aria-busy={!isAuthReady || undefined}
+                    aria-haspopup={!isAuthReady || isOwner ? undefined : 'dialog'}
                     className={itemClassName}
+                    disabled={!adminNavState.canUseAction}
                     onClick={openAdminLogin}
                   >
-                    <item.icon className="w-[18px] h-[18px] mr-2" />
+                    <item.icon className={cn('w-[18px] h-[18px] mr-2', !isAuthReady && 'animate-spin')} />
                     {item.name}
                   </Button>
                 );
@@ -200,11 +213,13 @@ const Navigation = ({ onDownload, isDownloading }: { onDownload: () => void; isD
                     <button
                       key={item.path}
                       type="button"
-                      aria-haspopup={isOwner ? undefined : 'dialog'}
-                      className={cn(itemClassName, 'w-full text-left')}
+                      aria-busy={!isAuthReady || undefined}
+                      aria-haspopup={!isAuthReady || isOwner ? undefined : 'dialog'}
+                      disabled={!adminNavState.canUseAction}
+                      className={cn(itemClassName, 'w-full text-left disabled:cursor-wait disabled:opacity-70')}
                       onClick={openAdminLogin}
                     >
-                      <item.icon className="w-5 h-5" />
+                      <item.icon className={cn('w-5 h-5', !isAuthReady && 'animate-spin')} />
                       <span>{item.name}</span>
                     </button>
                   );

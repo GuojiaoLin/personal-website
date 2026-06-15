@@ -6,12 +6,19 @@ import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { ArrowRight, Sparkles, Briefcase, Camera, Heart, Code2, UserRound, Footprints, PersonStanding, Cat, Sun } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { listHomeGallerySlots, type HomeGallerySlotKey, type HomeGallerySlotRecord } from '../lib/adminApi';
 import { requestJson } from '../lib/siteApi';
 
 const lifeLensImage = new URL('../../docs/images/微信图片_20260509190424.jpg', import.meta.url).href;
 const resumeSceneImage = new URL('../../docs/images/微信图片_20260529165600.jpg', import.meta.url).href;
 const resumeCardImage = new URL('../../docs/images/微信图片_20260608142513_56_360.jpg', import.meta.url).href;
 const catPortraitImage = new URL('../../docs/images/图册/微信图片_20260529170441.jpg', import.meta.url).href;
+const defaultHomeSlotImages: Record<HomeGallerySlotKey, string> = {
+  'hero-polaroid': resumeSceneImage,
+  'resume-card': resumeCardImage,
+  'life-card': lifeLensImage,
+  'about-portrait': catPortraitImage,
+};
 const aboutTags = [
   { label: '撸猫', Icon: Cat },
   { label: '散步', Icon: Footprints },
@@ -47,6 +54,35 @@ const formatHomeBlogDate = (value?: string | null) => {
 const Home = () => {
   const [homeBlogPosts, setHomeBlogPosts] = useState<HomeBlogPostRecord[]>([]);
   const [isLoadingHomeBlogPosts, setIsLoadingHomeBlogPosts] = useState(true);
+  const [homeSlotImages, setHomeSlotImages] = useState<Partial<Record<HomeGallerySlotKey, string>>>({});
+  const getHomeSlotImage = (slotKey: HomeGallerySlotKey) => homeSlotImages[slotKey] || defaultHomeSlotImages[slotKey];
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    const loadHomeSlotImages = async () => {
+      try {
+        const slots = await listHomeGallerySlots();
+        if (!isCurrent) return;
+
+        setHomeSlotImages(slots.reduce<Partial<Record<HomeGallerySlotKey, string>>>((images, slot: HomeGallerySlotRecord) => {
+          if (slot.photo?.url) {
+            images[slot.slotKey] = slot.photo.url;
+          }
+
+          return images;
+        }, {}));
+      } catch {
+        if (isCurrent) setHomeSlotImages({});
+      }
+    };
+
+    void loadHomeSlotImages();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -95,7 +131,7 @@ const Home = () => {
             className="absolute left-[7%] top-56 hidden w-64 rotate-[-7deg] rounded-[24px] border-[10px] border-white bg-white shadow-[0_22px_50px_rgba(15,23,42,0.12)] lg:block"
           >
             <img
-              src={resumeSceneImage}
+              src={getHomeSlotImage('hero-polaroid')}
               alt=""
               className="h-44 w-full rounded-[16px] object-cover object-[58%_38%]"
             />
@@ -236,7 +272,7 @@ const Home = () => {
             </div>
             <div className="relative z-10 mt-8 mb-6 overflow-hidden rounded-3xl border border-slate-100 shadow-md">
               <img
-                src={resumeCardImage}
+                src={getHomeSlotImage('resume-card')}
                 alt="展柜前生活照"
                 className="w-full aspect-[16/9] object-cover object-[58%_46%] transition-transform duration-500 group-hover:scale-[1.02]"
               />
@@ -305,7 +341,7 @@ const Home = () => {
             </p>
             <div className="relative z-10 mb-6">
               <img
-                src={lifeLensImage}
+                src={getHomeSlotImage('life-card')}
                 alt="小动物相伴的生活摄影"
                 className="rounded-3xl w-full aspect-[16/9] object-cover shadow-md ring-2 ring-slate-100 hover:scale-[1.02] transition-transform"
               />
@@ -500,7 +536,7 @@ const Home = () => {
               className="relative"
             >
               <img
-                src={catPortraitImage}
+                src={getHomeSlotImage('about-portrait')}
                 alt="我和小猫合影"
                 className="aspect-[1.08/1] w-full rounded-[32px] border-[5px] border-white object-cover object-center shadow-[0_18px_36px_rgba(15,23,42,0.13)]"
               />

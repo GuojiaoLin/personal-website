@@ -1,6 +1,8 @@
 package com.guojiaolin.website;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -195,6 +197,140 @@ class ContentApiIntegrationTest {
   }
 
   @Test
+  void galleryUploadsAssignIncrementingSortOrderWhenSortOrderIsOmitted() throws Exception {
+    var session = login();
+    var firstFileName = "auto sort first %d.png".formatted(System.nanoTime());
+    var secondFileName = "auto sort second %d.png".formatted(System.nanoTime());
+
+    var firstResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(new MockMultipartFile("file", firstFileName, "image/png", new byte[] { 1, 2, 3 }))
+        .param("title", "Auto sort first")
+        .param("description", "First uploaded photo")
+        .param("status", "published")
+        .session(session))
+      .andExpect(status().isCreated())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var firstPhotoId = JsonField.extract(firstResponse, "id");
+    var firstSortOrder = JsonField.extractInt(firstResponse, "sortOrder");
+    assertThat(firstSortOrder).isGreaterThan(0);
+
+    var secondResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(new MockMultipartFile("file", secondFileName, "image/png", new byte[] { 4, 5, 6 }))
+        .param("title", "Auto sort second")
+        .param("description", "Second uploaded photo")
+        .param("status", "published")
+        .session(session))
+      .andExpect(status().isCreated())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var secondPhotoId = JsonField.extract(secondResponse, "id");
+    var secondSortOrder = JsonField.extractInt(secondResponse, "sortOrder");
+    assertThat(secondSortOrder).isEqualTo(firstSortOrder + 1);
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(firstPhotoId)).session(session))
+      .andExpect(status().isNoContent());
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(secondPhotoId)).session(session))
+      .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void ownerCanChooseGalleryPhotosForHomeImageSlots() throws Exception {
+    var session = login();
+    var publishedFileName = "home hero %d.png".formatted(System.nanoTime());
+    var hiddenFileName = "home hidden %d.png".formatted(System.nanoTime());
+
+    var publishedPhotoResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(new MockMultipartFile("file", publishedFileName, "image/png", new byte[] { 1, 2, 3 }))
+        .param("title", "Home hero")
+        .param("description", "Hero floating card")
+        .param("status", "published")
+        .session(session))
+      .andExpect(status().isCreated())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var hiddenPhotoResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(new MockMultipartFile("file", hiddenFileName, "image/png", new byte[] { 4, 5, 6 }))
+        .param("title", "Hidden home photo")
+        .param("description", "Should stay private")
+        .param("status", "hidden")
+        .session(session))
+      .andExpect(status().isCreated())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var publishedPhotoId = JsonField.extract(publishedPhotoResponse, "id");
+    var hiddenPhotoId = JsonField.extract(hiddenPhotoResponse, "id");
+
+    mockMvc.perform(put("/api/admin/home-gallery-slots")
+        .session(session)
+        .contentType("application/json")
+        .content("""
+          {
+            "slots": [
+              {
+                "slotKey": "hero-polaroid",
+                "galleryPhotoId": "%s"
+              },
+              {
+                "slotKey": "life-card",
+                "galleryPhotoId": "%s"
+              }
+            ]
+          }
+          """.formatted(publishedPhotoId, hiddenPhotoId)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.items", hasSize(4)))
+      .andExpect(jsonPath("$.items[0].slotKey").value("hero-polaroid"))
+      .andExpect(jsonPath("$.items[0].photo.title").value("Home hero"))
+      .andExpect(jsonPath("$.items[2].slotKey").value("life-card"))
+      .andExpect(jsonPath("$.items[2].photo.title").value("Hidden home photo"));
+
+    mockMvc.perform(get("/api/home-gallery-slots"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.items", hasSize(4)))
+      .andExpect(jsonPath("$.items[0].slotKey").value("hero-polaroid"))
+      .andExpect(jsonPath("$.items[0].photo.title").value("Home hero"))
+      .andExpect(jsonPath("$.items[2].slotKey").value("life-card"))
+      .andExpect(jsonPath("$.items[2].photo", nullValue()));
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(publishedPhotoId)).session(session))
+      .andExpect(status().isNoContent());
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(hiddenPhotoId)).session(session))
+      .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void ownerCanUploadLocalImageForHomeImageSlot() throws Exception {
+    var session = login();
+    var fileName = "home-local-upload-%d.png".formatted(System.nanoTime());
+
+    mockMvc.perform(multipart("/api/admin/home-gallery-slots/hero-polaroid/image")
+        .file(new MockMultipartFile("file", fileName, "image/png", new byte[] { 1, 2, 3 }))
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.slotKey").value("hero-polaroid"))
+      .andExpect(jsonPath("$.photo.title").value("首页顶部左侧拍立得"))
+      .andExpect(jsonPath("$.photo.status").value("published"))
+      .andExpect(jsonPath("$.photo.url").value("/uploads/home/" + fileName));
+
+    mockMvc.perform(get("/api/home-gallery-slots"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.items", hasSize(4)))
+      .andExpect(jsonPath("$.items[0].slotKey").value("hero-polaroid"))
+      .andExpect(jsonPath("$.items[0].photo.url").value("/uploads/home/" + fileName));
+  }
+
+  @Test
   void activeResumeVersionIsManagedFromAdminAndExposedPublicly() throws Exception {
     var session = login();
     var firstResumeName = "resume-first-%d.pdf".formatted(System.nanoTime());
@@ -338,6 +474,22 @@ class ContentApiIntegrationTest {
       .andExpect(jsonPath("$.mimeType").value("image/png"))
       .andExpect(jsonPath("$.sizeBytes").value(3))
       .andExpect(jsonPath("$.url").value("/uploads/about/" + fileName.replace(" ", "%20")));
+  }
+
+  @Test
+  void ownerCanUploadProjectCoverImages() throws Exception {
+    var session = login();
+    var fileName = "project cover %d.png".formatted(System.nanoTime());
+    var image = new MockMultipartFile("file", fileName, "image/png", new byte[] { 1, 2, 3 });
+
+    mockMvc.perform(multipart("/api/admin/projects/assets")
+        .file(image)
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(fileName))
+      .andExpect(jsonPath("$.mimeType").value("image/png"))
+      .andExpect(jsonPath("$.sizeBytes").value(3))
+      .andExpect(jsonPath("$.url").value("/uploads/projects/" + fileName.replace(" ", "%20")));
   }
 
   @Test
@@ -664,6 +816,22 @@ class ContentApiIntegrationTest {
       var valueStart = start + marker.length();
       var valueEnd = json.indexOf('"', valueStart);
       return json.substring(valueStart, valueEnd);
+    }
+
+    private static int extractInt(String json, String fieldName) {
+      var marker = "\"%s\":".formatted(fieldName);
+      var start = json.indexOf(marker);
+      if (start < 0) {
+        throw new IllegalArgumentException("Missing JSON field: " + fieldName);
+      }
+
+      var valueStart = start + marker.length();
+      var valueEnd = valueStart;
+      while (valueEnd < json.length() && Character.isDigit(json.charAt(valueEnd))) {
+        valueEnd += 1;
+      }
+
+      return Integer.parseInt(json.substring(valueStart, valueEnd));
     }
   }
 }

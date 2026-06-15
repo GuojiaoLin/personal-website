@@ -68,6 +68,13 @@ export interface ProjectPayload {
   status: ContentStatus;
 }
 
+export interface ProjectAssetRecord {
+  url: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface MediaAssetRecord {
   id: string;
   url: string;
@@ -101,6 +108,29 @@ export interface GalleryPhotoPayload {
   takenAt: string;
   sortOrder: number;
   status: ContentStatus;
+}
+
+export const HOME_GALLERY_SLOT_KEYS = [
+  'hero-polaroid',
+  'resume-card',
+  'life-card',
+  'about-portrait',
+] as const;
+
+export type HomeGallerySlotKey = typeof HOME_GALLERY_SLOT_KEYS[number];
+
+export interface HomeGallerySlotPhotoRecord extends Omit<GalleryPhotoRecord, 'id'> {
+  id?: string | null;
+}
+
+export interface HomeGallerySlotRecord {
+  slotKey: HomeGallerySlotKey;
+  photo: HomeGallerySlotPhotoRecord | null;
+}
+
+export interface HomeGallerySlotPayload {
+  slotKey: HomeGallerySlotKey;
+  galleryPhotoId?: string | null;
 }
 
 export interface ResumeVersionRecord {
@@ -154,6 +184,29 @@ export const updateProject = (id: string, payload: ProjectPayload) => requestJso
 export const deleteProject = (id: string) => requestJson<void>(`/api/admin/projects/${id}`, {
   method: 'DELETE',
 });
+
+export const uploadProjectAsset = async (file: File) => {
+  const body = new FormData();
+  body.append('file', file);
+
+  let response: Response;
+
+  try {
+    response = await fetch(getApiUrl('/api/admin/projects/assets'), {
+      method: 'POST',
+      credentials: 'include',
+      body,
+    });
+  } catch {
+    throw new Error(createNetworkErrorMessage('/api/admin/projects/assets'));
+  }
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Project cover upload failed.'));
+  }
+
+  return response.json() as Promise<ProjectAssetRecord>;
+};
 
 export const listAdminBlogPosts = async () => (
   await requestJson<ListResponse<BlogPostRecord>>('/api/admin/blog-posts')
@@ -210,9 +263,47 @@ export const listGalleryPhotos = async () => (
   await requestJson<ListResponse<GalleryPhotoRecord>>('/api/gallery-photos')
 ).items;
 
+export const listHomeGallerySlots = async () => (
+  await requestJson<ListResponse<HomeGallerySlotRecord>>('/api/home-gallery-slots')
+).items;
+
 export const listAdminGalleryPhotos = async () => (
   await requestJson<ListResponse<GalleryPhotoRecord>>('/api/admin/gallery-photos')
 ).items;
+
+export const listAdminHomeGallerySlots = async () => (
+  await requestJson<ListResponse<HomeGallerySlotRecord>>('/api/admin/home-gallery-slots')
+).items;
+
+export const updateAdminHomeGallerySlots = async (slots: HomeGallerySlotPayload[]) => (
+  await requestJson<ListResponse<HomeGallerySlotRecord>>('/api/admin/home-gallery-slots', {
+    method: 'PUT',
+    body: JSON.stringify({ slots }),
+  })
+).items;
+
+export const uploadHomeGallerySlotImage = async (slotKey: HomeGallerySlotKey, file: File) => {
+  const body = new FormData();
+  body.append('file', file);
+
+  let response: Response;
+
+  try {
+    response = await fetch(getApiUrl(`/api/admin/home-gallery-slots/${slotKey}/image`), {
+      method: 'POST',
+      credentials: 'include',
+      body,
+    });
+  } catch {
+    throw new Error(createNetworkErrorMessage(`/api/admin/home-gallery-slots/${slotKey}/image`));
+  }
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, '首页图片上传失败，请稍后再试。'));
+  }
+
+  return response.json() as Promise<HomeGallerySlotRecord>;
+};
 
 export const updateGalleryPhoto = (id: string, payload: GalleryPhotoPayload) => (
   requestJson<GalleryPhotoRecord>(`/api/admin/gallery-photos/${id}`, {

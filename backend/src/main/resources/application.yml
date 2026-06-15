@@ -33,6 +33,10 @@ site:
   uploads:
     directory: ${SITE_UPLOADS_DIRECTORY:uploads}
     public-path: ${SITE_UPLOADS_PUBLIC_PATH:/uploads}
+  content:
+    seed:
+      enabled: ${SITE_CONTENT_SEED_ENABLED:true}
+      blog-directory: ${SITE_CONTENT_SEED_BLOG_DIRECTORY:../src/content/blog}
   gallery:
     seed:
       enabled: ${SITE_GALLERY_SEED_ENABLED:true}

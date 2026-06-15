@@ -32,10 +32,13 @@ import {
   type ContentStatus,
   type GalleryPhotoPayload,
   type GalleryPhotoRecord,
+  type HomeGallerySlotKey,
+  type HomeGallerySlotRecord,
   type MediaAssetRecord,
   type ProjectPayload,
   type ProjectRecord,
   type ResumeVersionRecord,
+  HOME_GALLERY_SLOT_KEYS,
   activateResumeVersion,
   createBlogPost,
   createProject,
@@ -46,18 +49,22 @@ import {
   deleteResumeVersion,
   getCurrentAdmin,
   listAdminGalleryPhotos,
+  listAdminHomeGallerySlots,
   listMediaAssets,
   listAdminBlogPosts,
   listAdminProjects,
   listAdminResumeVersions,
   loginAdmin,
   logoutAdmin,
+  updateAdminHomeGallerySlots,
   updateGalleryPhoto,
   updateProject,
   updateBlogPost,
   uploadAboutAsset,
   uploadGalleryPhoto,
+  uploadHomeGallerySlotImage,
   uploadMediaAsset,
+  uploadProjectAsset,
   uploadResumeVersion,
 } from '../lib/adminApi';
 import {
@@ -89,6 +96,41 @@ type EditorMode = 'edit' | 'preview';
 type ContentTab = 'project' | 'blog' | 'gallery' | 'comment' | 'about';
 type SelectedType = ContentTab | null;
 const DEFAULT_BLOG_CATEGORY = '技术博客';
+const homeGallerySlotMeta: Record<HomeGallerySlotKey, { title: string; hint: string }> = {
+  'hero-polaroid': {
+    title: '首页顶部左侧拍立得',
+    hint: '对应首屏左边倾斜照片',
+  },
+  'resume-card': {
+    title: '履历卡片图片',
+    hint: '对应“履历与背景”卡片',
+  },
+  'life-card': {
+    title: '生活与快门图片',
+    hint: '对应“生活与快门”卡片',
+  },
+  'about-portrait': {
+    title: '关于我大图',
+    hint: '对应“不仅仅是代码”右侧图片',
+  },
+};
+
+const emptyHomeGallerySlots = () => (
+  HOME_GALLERY_SLOT_KEYS.reduce((slots, slotKey) => {
+    slots[slotKey] = { slotKey, photo: null };
+    return slots;
+  }, {} as Record<HomeGallerySlotKey, HomeGallerySlotRecord>)
+);
+
+const homeGallerySlotsFromRecords = (slots: HomeGallerySlotRecord[]) => {
+  const nextSlots = emptyHomeGallerySlots();
+
+  slots.forEach((slot) => {
+    nextSlots[slot.slotKey] = slot;
+  });
+
+  return nextSlots;
+};
 
 interface BlogEditorForm {
   id?: string;
@@ -111,6 +153,7 @@ interface ProjectEditorForm {
   slug: string;
   summary: string;
   descriptionMarkdown: string;
+  coverImageUrl: string;
   projectIcon: string;
   techStackText: string;
   sortOrder: number;
@@ -124,7 +167,6 @@ interface GalleryPhotoForm {
   location: string;
   takenAt: string;
   sortOrder: number;
-  status: ContentStatus;
   url: string;
   fileName: string;
 }
@@ -154,6 +196,7 @@ const emptyProjectForm = (): ProjectEditorForm => ({
   slug: '',
   summary: '',
   descriptionMarkdown: '',
+  coverImageUrl: '',
   projectIcon: '',
   techStackText: '',
   sortOrder: 0,
@@ -166,7 +209,6 @@ const emptyGalleryPhotoForm = (): GalleryPhotoForm => ({
   location: '生活图册',
   takenAt: '',
   sortOrder: 0,
-  status: 'draft',
   url: '',
   fileName: '',
 });
@@ -419,6 +461,7 @@ const formFromProject = (project: ProjectRecord): ProjectEditorForm => ({
   slug: project.slug,
   summary: project.summary,
   descriptionMarkdown: project.descriptionMarkdown,
+  coverImageUrl: project.coverImageUrl ?? '',
   projectIcon: project.projectIcon || '',
   techStackText: project.techStack.join(', '),
   sortOrder: project.sortOrder,
@@ -430,7 +473,7 @@ const toProjectPayload = (form: ProjectEditorForm, status: ContentStatus): Proje
   slug: (form.slug.trim() || slugify(form.title, 'project')).toLowerCase(),
   summary: form.summary.trim(),
   descriptionMarkdown: form.descriptionMarkdown.trim(),
-  coverImageUrl: null,
+  coverImageUrl: form.coverImageUrl.trim() || null,
   projectIcon: form.projectIcon || null,
   techStack: form.techStackText
     .split(',')
@@ -447,12 +490,11 @@ const formFromGalleryPhoto = (photo: GalleryPhotoRecord): GalleryPhotoForm => ({
   location: photo.location,
   takenAt: photo.takenAt,
   sortOrder: photo.sortOrder,
-  status: photo.status,
   url: photo.url,
   fileName: photo.fileName,
 });
 
-const toGalleryPhotoPayload = (form: GalleryPhotoForm, status = form.status): GalleryPhotoPayload => ({
+const toGalleryPhotoPayload = (form: GalleryPhotoForm, status: ContentStatus = 'draft'): GalleryPhotoPayload => ({
   title: form.title.trim(),
   description: form.description.trim(),
   location: form.location.trim(),
@@ -472,6 +514,8 @@ const Admin = () => {
   const [posts, setPosts] = useState<BlogPostRecord[]>([]);
   const [comments, setComments] = useState<CommentRecord[]>([]);
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhotoRecord[]>([]);
+  const [homeGallerySlots, setHomeGallerySlots] = useState<Record<HomeGallerySlotKey, HomeGallerySlotRecord>>(() => emptyHomeGallerySlots());
+  const [isHomeGallerySlotsOpen, setIsHomeGallerySlotsOpen] = useState(true);
   const [resumeVersions, setResumeVersions] = useState<ResumeVersionRecord[]>([]);
   const [aboutContent, setAboutContent] = useState<AboutContentRecord>(() => emptyAboutContent());
   const [isAboutAssetsOpen, setIsAboutAssetsOpen] = useState(true);
@@ -491,16 +535,19 @@ const Admin = () => {
   const [isSavingGalleryPhoto, setIsSavingGalleryPhoto] = useState(false);
   const [isSavingAbout, setIsSavingAbout] = useState(false);
   const [aboutAssetUploadTarget, setAboutAssetUploadTarget] = useState<'portraitImageUrl' | 'wechatQrImageUrl' | null>(null);
+  const [isUploadingProjectCover, setIsUploadingProjectCover] = useState(false);
   const [isUploadingGalleryPhoto, setIsUploadingGalleryPhoto] = useState(false);
   const [isUploadingResume, setIsUploadingResume] = useState(false);
   const [commentActionId, setCommentActionId] = useState<string | null>(null);
   const [galleryActionId, setGalleryActionId] = useState<string | null>(null);
+  const [homeGalleryBusySlot, setHomeGalleryBusySlot] = useState<HomeGallerySlotKey | null>(null);
   const [resumeActionId, setResumeActionId] = useState<string | null>(null);
   const [mediaAssets, setMediaAssets] = useState<MediaAssetRecord[]>([]);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [mediaActionId, setMediaActionId] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState('');
   const [galleryError, setGalleryError] = useState('');
+  const [homeGalleryError, setHomeGalleryError] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [aboutError, setAboutError] = useState('');
   const [editorMode, setEditorMode] = useState<EditorMode>('edit');
@@ -513,6 +560,11 @@ const Admin = () => {
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
   const hasAppliedAdminTarget = useRef(false);
   const returnPathAfterLogin = getSafeReturnPath(searchParams.get('returnTo'));
+
+  const homeGalleryConfiguredCount = useMemo(
+    () => HOME_GALLERY_SLOT_KEYS.filter((slotKey) => Boolean(homeGallerySlots[slotKey].photo)).length,
+    [homeGallerySlots]
+  );
 
   const activePost = useMemo(
     () => posts.find((post) => post.id === selectedBlogId) ?? posts.find((post) => post.id === form.id),
@@ -567,16 +619,21 @@ const Admin = () => {
     hidden: galleryPhotos.filter((photo) => photo.status === 'hidden').length,
   }), [galleryPhotos]);
 
+  const nextGallerySortOrder = useMemo(() => (
+    galleryPhotos.reduce((max, photo) => Math.max(max, Number(photo.sortOrder) || 0), 0) + 1
+  ), [galleryPhotos]);
+
   const refreshContent = useCallback(async () => {
     setIsLoadingContent(true);
     setError('');
 
     try {
-      const [nextProjects, nextPosts, nextComments, nextGalleryPhotos, nextAboutContent] = await Promise.all([
+      const [nextProjects, nextPosts, nextComments, nextGalleryPhotos, nextHomeGallerySlots, nextAboutContent] = await Promise.all([
         listAdminProjects(),
         listAdminBlogPosts(),
         listAdminComments(),
         listAdminGalleryPhotos(),
+        listAdminHomeGallerySlots(),
         getAdminAboutContent(),
       ]);
 
@@ -584,8 +641,10 @@ const Admin = () => {
       setPosts(nextPosts);
       setComments(nextComments);
       setGalleryPhotos(nextGalleryPhotos);
+      setHomeGallerySlots(homeGallerySlotsFromRecords(nextHomeGallerySlots));
       setAboutContent(nextAboutContent);
       setAboutError('');
+      setHomeGalleryError('');
       listAdminResumeVersions()
         .then((nextResumeVersions) => {
           setResumeVersions(nextResumeVersions);
@@ -852,6 +911,50 @@ const Admin = () => {
     updateGalleryField(field, value);
   };
 
+  const handleHomeGallerySlotUpload = (slotKey: HomeGallerySlotKey) => async (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setError('');
+    setNotice('');
+    setHomeGalleryError('');
+    setHomeGalleryBusySlot(slotKey);
+
+    try {
+      const savedSlot = await uploadHomeGallerySlotImage(slotKey, file);
+      setHomeGallerySlots((current) => ({
+        ...current,
+        [slotKey]: savedSlot,
+      }));
+      setNotice(`${homeGallerySlotMeta[slotKey].title}已上传。`);
+    } catch (uploadError) {
+      setHomeGalleryError(uploadError instanceof Error ? uploadError.message : '首页图片上传失败。');
+    } finally {
+      setHomeGalleryBusySlot(null);
+      input.value = '';
+    }
+  };
+
+  const resetHomeGallerySlot = async (slotKey: HomeGallerySlotKey) => {
+    setError('');
+    setNotice('');
+    setHomeGalleryError('');
+    setHomeGalleryBusySlot(slotKey);
+
+    try {
+      const savedSlots = await updateAdminHomeGallerySlots([{ slotKey, galleryPhotoId: null }]);
+      setHomeGallerySlots(homeGallerySlotsFromRecords(savedSlots));
+      setNotice(`${homeGallerySlotMeta[slotKey].title}已恢复默认图。`);
+    } catch (resetError) {
+      setHomeGalleryError(resetError instanceof Error ? resetError.message : '首页图片恢复默认失败。');
+    } finally {
+      setHomeGalleryBusySlot(null);
+    }
+  };
+
   const updateAboutField = (
     field: keyof Pick<AboutContentRecord, 'portraitImageUrl' | 'wechatQrImageUrl'>,
     value: string
@@ -994,6 +1097,39 @@ const Admin = () => {
       coverImageUrl: asset.url,
     }));
     setNotice('已设为首页博客卡片封面。');
+  };
+
+  const handleProjectCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    setError('');
+    setNotice('');
+    setIsUploadingProjectCover(true);
+
+    try {
+      const uploaded = await uploadProjectAsset(file);
+      setProjectForm((current) => ({
+        ...current,
+        coverImageUrl: uploaded.url,
+      }));
+      setNotice('项目展示图已上传，请保存或发布项目后生效。');
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : '项目展示图上传失败。');
+    } finally {
+      setIsUploadingProjectCover(false);
+      input.value = '';
+    }
+  };
+
+  const clearProjectCoverImage = () => {
+    setProjectForm((current) => ({
+      ...current,
+      coverImageUrl: '',
+    }));
+    setNotice('项目展示图已清空，保存或发布项目后生效。');
   };
 
   const handleMediaUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1142,6 +1278,7 @@ const Admin = () => {
     setError('');
     setNotice('');
     setGalleryError('');
+    setHomeGalleryError('');
     setSelectedType('gallery');
     setContentTab('gallery');
     setSelectedBlogId(null);
@@ -1154,6 +1291,7 @@ const Admin = () => {
     setError('');
     setNotice('');
     setGalleryError('');
+    setHomeGalleryError('');
     setSelectedType('gallery');
     setContentTab('gallery');
     setSelectedGalleryPhotoId(null);
@@ -1168,6 +1306,7 @@ const Admin = () => {
     setError('');
     setNotice('');
     setGalleryError('');
+    setHomeGalleryError('');
     setSelectedType('gallery');
     setContentTab('gallery');
     setSelectedGalleryPhotoId(photo.id);
@@ -1238,13 +1377,13 @@ const Admin = () => {
     }
   };
 
-  const saveGalleryPhoto = async (status = galleryForm.status) => {
+  const saveGalleryPhoto = async (status: ContentStatus) => {
     setError('');
     setNotice('');
     setGalleryError('');
 
     if (!galleryForm.id) {
-      setGalleryError('请先上传图片，再保存信息。');
+      setGalleryError('请先上传图片，再发布展示。');
       return;
     }
 
@@ -1258,11 +1397,12 @@ const Admin = () => {
     try {
       const saved = await updateGalleryPhoto(galleryForm.id, toGalleryPhotoPayload(galleryForm, status));
       setGalleryPhotos((current) => current.map((photo) => (photo.id === saved.id ? saved : photo)));
-      setGalleryForm(formFromGalleryPhoto(saved));
+      setGalleryForm(emptyGalleryPhotoForm());
       setSelectedType('gallery');
       setContentTab('gallery');
-      setSelectedGalleryPhotoId(saved.id);
-      setNotice(status === 'published' ? '图册图片已发布。' : '图册图片信息已保存。');
+      setSelectedGalleryPhotoId(null);
+      setIsCreatingNew(true);
+      setNotice('图册图片已发布。');
       await refreshContent();
     } catch (saveError) {
       setGalleryError(saveError instanceof Error ? saveError.message : '图册图片保存失败。');
@@ -2562,19 +2702,116 @@ const Admin = () => {
 
               {galleryError && <p className="mx-4 mt-4 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{galleryError}</p>}
               {error && <p className="mx-4 mt-4 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p>}
+              {homeGalleryError && <p className="mx-4 mt-4 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{homeGalleryError}</p>}
+
+              <section className="mx-4 mt-4 rounded-md border border-slate-200 bg-slate-50 p-4 md:mx-5">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-stretch">
+                  <div className="flex min-h-10 items-center">
+                    <p className="text-sm font-black text-slate-800">首页展示位置</p>
+                  </div>
+                  <p className="flex h-10 items-center rounded-md border border-slate-200 bg-white px-3.5 text-xs font-black text-slate-500">
+                    已上传 {homeGalleryConfiguredCount} / {HOME_GALLERY_SLOT_KEYS.length}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 gap-1.5 rounded-md bg-white px-3.5 text-xs font-black text-slate-600"
+                    aria-controls="home-gallery-slot-panel"
+                    aria-expanded={isHomeGallerySlotsOpen}
+                    aria-label={isHomeGallerySlotsOpen ? '收起首页图片设置' : '展开首页图片设置'}
+                    onClick={() => setIsHomeGallerySlotsOpen((isOpen) => !isOpen)}
+                  >
+                    <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isHomeGallerySlotsOpen && 'rotate-180')} />
+                    {isHomeGallerySlotsOpen ? '收起' : '展开'}
+                  </Button>
+                </div>
+
+                {!isHomeGallerySlotsOpen && (
+                  <div className="mt-4 rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs font-bold text-slate-400">
+                    首页图片设置已折叠，当前已上传 {homeGalleryConfiguredCount} 张。
+                  </div>
+                )}
+
+                {isHomeGallerySlotsOpen && (
+                  <div id="home-gallery-slot-panel" className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {HOME_GALLERY_SLOT_KEYS.map((slotKey) => {
+                      const slot = homeGallerySlots[slotKey];
+                      const selectedPhoto = slot.photo;
+                      const isBusy = homeGalleryBusySlot === slotKey;
+
+                      return (
+                        <div key={slotKey} className="rounded-md border border-slate-200 bg-white p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="block text-sm font-black text-slate-700">{homeGallerySlotMeta[slotKey].title}</span>
+                              <span className="mt-1 block text-xs font-bold text-slate-400">{homeGallerySlotMeta[slotKey].hint}</span>
+                            </div>
+                            {selectedPhoto && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+                                disabled={Boolean(homeGalleryBusySlot)}
+                                onClick={() => void resetHomeGallerySlot(slotKey)}
+                              >
+                                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                默认图
+                              </Button>
+                            )}
+                          </div>
+                          {selectedPhoto && (
+                            <div className="mt-3 flex items-center gap-3 rounded-md bg-slate-50 p-2">
+                              <img src={selectedPhoto.url} alt={selectedPhoto.title} className="h-14 w-20 shrink-0 rounded object-cover" />
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-black text-slate-700">{selectedPhoto.title}</p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-400">
+                                  {selectedPhoto.fileName || '已上传，首页可见'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {!selectedPhoto && (
+                            <div className="mt-3 flex min-h-[72px] items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 text-center">
+                              <p className="text-xs font-bold text-slate-400">当前使用默认图</p>
+                            </div>
+                          )}
+
+                          <label className={cn(
+                            'mt-3 inline-flex h-9 cursor-pointer items-center gap-2 rounded-md bg-slate-950 px-3 text-xs font-black text-white transition hover:bg-slate-800',
+                            homeGalleryBusySlot && 'pointer-events-none opacity-70'
+                          )}>
+                            {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                            从本地上传
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/gif,image/webp"
+                              className="sr-only"
+                              disabled={Boolean(homeGalleryBusySlot)}
+                              onChange={(event) => void handleHomeGallerySlotUpload(slotKey)(event)}
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
 
               <div className="grid gap-5 p-4 md:p-5 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
                 <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   {galleryForm.url ? (
-                    <div className="overflow-hidden rounded-md bg-white">
-                      <img src={galleryForm.url} alt={galleryForm.title || '图册图片预览'} className="aspect-[4/5] w-full object-cover" />
-                      <div className="border-t border-slate-100 p-3">
+                    <div className="flex h-[360px] flex-col overflow-hidden rounded-md bg-white">
+                      <div className="min-h-0 flex-1 bg-slate-100">
+                        <img src={galleryForm.url} alt={galleryForm.title || '图册图片预览'} className="h-full w-full object-cover" />
+                      </div>
+                      <div className="shrink-0 border-t border-slate-100 p-3">
                         <p className="truncate text-sm font-black text-slate-700">{galleryForm.fileName}</p>
-                        <p className="mt-1 text-xs font-bold text-slate-400">{galleryForm.url}</p>
+                        <p className="mt-1 truncate text-xs font-bold text-slate-400">{galleryForm.url}</p>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-md border border-dashed border-slate-200 bg-white px-4 text-center">
+                    <div className="flex h-[360px] flex-col items-center justify-center rounded-md border border-dashed border-slate-200 bg-white px-4 text-center">
                       <ImageIcon className="h-9 w-9 text-slate-300" />
                       <p className="mt-3 text-sm font-bold text-slate-400">先填写信息，再选择本地图片上传。</p>
                     </div>
@@ -2589,11 +2826,17 @@ const Admin = () => {
                     </label>
                     <label>
                       <span className="mb-2 block text-sm font-bold text-slate-600">排序</span>
-                      <Input type="number" value={galleryForm.sortOrder} onChange={handleGalleryInput('sortOrder')} />
+                      {galleryForm.id ? (
+                        <Input type="number" value={galleryForm.sortOrder} onChange={handleGalleryInput('sortOrder')} />
+                      ) : (
+                        <div className="flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-500">
+                          自动生成 {nextGallerySortOrder}
+                        </div>
+                      )}
                     </label>
                   </div>
 
-                  <div className="grid gap-3 xl:grid-cols-3">
+                  <div className="grid gap-3 xl:grid-cols-2">
                     <label>
                       <span className="mb-2 block text-sm font-bold text-slate-600">地点</span>
                       <Input value={galleryForm.location} onChange={handleGalleryInput('location')} placeholder="生活图册" />
@@ -2601,18 +2844,6 @@ const Admin = () => {
                     <label>
                       <span className="mb-2 block text-sm font-bold text-slate-600">日期</span>
                       <Input value={galleryForm.takenAt} onChange={handleGalleryInput('takenAt')} placeholder="2024 或 2024-05" />
-                    </label>
-                    <label>
-                      <span className="mb-2 block text-sm font-bold text-slate-600">状态</span>
-                      <select
-                        value={galleryForm.status}
-                        onChange={handleGalleryInput('status')}
-                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-950"
-                      >
-                        <option value="draft">草稿</option>
-                        <option value="published">已发布</option>
-                        <option value="hidden">隐藏</option>
-                      </select>
                     </label>
                   </div>
 
@@ -2645,10 +2876,6 @@ const Admin = () => {
                       </label>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" className="gap-2" disabled={isSavingGalleryPhoto} onClick={() => void saveGalleryPhoto(galleryForm.status)}>
-                          {isSavingGalleryPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                          保存信息
-                        </Button>
                         <Button type="button" className="gap-2 bg-slate-950 text-white hover:bg-slate-800" disabled={isSavingGalleryPhoto} onClick={() => void saveGalleryPhoto('published')}>
                           <Send className="h-4 w-4" />
                           发布展示
@@ -2909,6 +3136,55 @@ const Admin = () => {
                       );
                     })}
                   </div>
+                </section>
+
+                <section className="rounded-md border border-slate-200 bg-white p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-700">项目展示图</p>
+                      <p className="mt-1 text-xs font-bold text-slate-400">从本地选择图片上传，保存后会显示在项目页列表卡片上。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <label className={cn(
+                        'inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-50',
+                        isUploadingProjectCover && 'pointer-events-none opacity-60'
+                      )}>
+                        {isUploadingProjectCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        从本地上传
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/gif,image/webp"
+                          className="sr-only"
+                          disabled={isUploadingProjectCover}
+                          onChange={(event) => void handleProjectCoverUpload(event)}
+                        />
+                      </label>
+                      {projectForm.coverImageUrl && (
+                        <Button type="button" variant="outline" className="gap-2" onClick={clearProjectCoverImage}>
+                          <EyeOff className="h-4 w-4" />
+                          清除展示图
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {projectForm.coverImageUrl ? (
+                    <div className="flex items-center gap-3 rounded-md bg-slate-50 p-2">
+                      <img
+                        src={projectForm.coverImageUrl}
+                        alt={projectForm.title || '项目展示图预览'}
+                        className="h-20 w-32 shrink-0 rounded object-cover"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-700">已设置展示图</p>
+                        <p className="truncate text-xs font-bold text-slate-400">{projectForm.coverImageUrl}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-400">
+                      暂未设置展示图，上传后会自动填入当前项目。
+                    </p>
+                  )}
                 </section>
 
                 <div className="grid gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
