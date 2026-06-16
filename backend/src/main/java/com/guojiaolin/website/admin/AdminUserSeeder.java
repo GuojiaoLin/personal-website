@@ -30,16 +30,18 @@ public class AdminUserSeeder implements ApplicationRunner {
   @Override
   @Transactional
   public void run(ApplicationArguments args) {
+    if (users.count() > 0) {
+      return;
+    }
+
     if (!StringUtils.hasText(email) || !StringUtils.hasText(password)) {
       return;
     }
 
-    users.findByEmailIgnoreCase(email).orElseGet(() -> {
-      var user = new AdminUser();
-      user.setEmail(email.trim().toLowerCase());
-      user.setPasswordHash(passwordEncoder.encode(password));
-      user.setRole(AdminRole.OWNER);
-      return users.save(user);
-    });
+    var user = new AdminUser();
+    user.setEmail(email.trim().toLowerCase());
+    user.setPasswordHash(passwordEncoder.encode(password));
+    user.setRole(AdminRole.OWNER);
+    users.save(user);
   }
 }

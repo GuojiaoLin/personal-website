@@ -1,20 +1,25 @@
 package com.guojiaolin.website.auth;
 
 import com.guojiaolin.website.admin.AdminUserRepository;
+import com.guojiaolin.website.common.BadRequestException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,10 +30,15 @@ public class AuthController {
 
   private final AuthenticationManager authenticationManager;
   private final AdminUserRepository users;
+  private final PasswordEncoder passwordEncoder;
 
-  public AuthController(AuthenticationManager authenticationManager, AdminUserRepository users) {
+  public AuthController(
+      AuthenticationManager authenticationManager,
+      AdminUserRepository users,
+      PasswordEncoder passwordEncoder) {
     this.authenticationManager = authenticationManager;
     this.users = users;
+    this.passwordEncoder = passwordEncoder;
   }
 
   @PostMapping("/login")
@@ -66,6 +76,30 @@ public class AuthController {
     return ResponseEntity.noContent().build();
   }
 
+  @PutMapping("/password")
+  public ResponseEntity<Void> changePassword(
+      @Valid @RequestBody ChangePasswordRequest request,
+      Authentication authentication) {
+    if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getName())) {
+      return ResponseEntity.status(401).build();
+    }
+
+    var user = users.findByEmailIgnoreCase(authentication.getName())
+      .orElseThrow(() -> new IllegalStateException("Authenticated admin user is missing."));
+
+    if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+      throw new BadCredentialsException("Invalid current password.");
+    }
+
+    if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+      throw new BadRequestException("New password must be different from the current password.");
+    }
+
+    user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+    users.save(user);
+    return ResponseEntity.noContent().build();
+  }
+
   private AdminUserResponse currentUser(Authentication authentication) {
     var user = users.findByEmailIgnoreCase(authentication.getName())
       .orElseThrow(() -> new IllegalStateException("Authenticated admin user is missing."));
@@ -76,6 +110,12 @@ public class AuthController {
   public record LoginRequest(
     @NotBlank @Email String email,
     @NotBlank String password
+  ) {
+  }
+
+  public record ChangePasswordRequest(
+    @NotBlank String currentPassword,
+    @NotBlank @Size(min = 6, max = 128) String newPassword
   ) {
   }
 

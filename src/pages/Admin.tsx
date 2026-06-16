@@ -10,6 +10,7 @@ import {
   FileText,
   FolderKanban,
   ImageIcon,
+  KeyRound,
   Loader2,
   LogOut,
   MessageCircle,
@@ -21,6 +22,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  X,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -40,6 +42,7 @@ import {
   type ResumeVersionRecord,
   HOME_GALLERY_SLOT_KEYS,
   activateResumeVersion,
+  changeAdminPassword,
   createBlogPost,
   createProject,
   deleteBlogPost,
@@ -171,6 +174,12 @@ interface GalleryPhotoForm {
   fileName: string;
 }
 
+interface PasswordChangeForm {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 const nextBlogOrderForProject = (posts: BlogPostRecord[], projectId: string) => {
   const scopedPosts = projectId ? posts.filter((post) => post.projectId === projectId) : posts;
   const maxOrder = scopedPosts.reduce((max, post) => Math.max(max, Number(post.blogOrder) || 0), 0);
@@ -211,6 +220,12 @@ const emptyGalleryPhotoForm = (): GalleryPhotoForm => ({
   sortOrder: 0,
   url: '',
   fileName: '',
+});
+
+const emptyPasswordChangeForm = (): PasswordChangeForm => ({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
 });
 
 const emptyAboutContent = (): AboutContentRecord => ({
@@ -378,6 +393,7 @@ const adminHeaderDangerButtonClass = cn(
   adminHeaderButtonClass,
   'hover:border-red-200 hover:bg-red-50 hover:text-red-700'
 );
+const adminHeaderIdentityClass = 'hidden h-10 min-w-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600 shadow-sm shadow-slate-200/50 sm:flex';
 
 const commentStatusLabel: Record<CommentStatus, string> = {
   pending: '待审核',
@@ -510,6 +526,10 @@ const Admin = () => {
   const [user, setUser] = useState<AdminUser | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordChangeForm, setPasswordChangeForm] = useState<PasswordChangeForm>(() => emptyPasswordChangeForm());
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState('');
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [posts, setPosts] = useState<BlogPostRecord[]>([]);
   const [comments, setComments] = useState<CommentRecord[]>([]);
@@ -803,6 +823,24 @@ const Admin = () => {
     void refreshMediaAssets(activeBlogPostId);
   }, [activeBlogPostId, authState, refreshMediaAssets, selectedType]);
 
+  useEffect(() => {
+    if (!isPasswordDialogOpen) return undefined;
+
+    const handlePasswordDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || isChangingPassword) return;
+
+      setPasswordChangeForm(emptyPasswordChangeForm());
+      setPasswordChangeError('');
+      setIsPasswordDialogOpen(false);
+    };
+
+    document.addEventListener('keydown', handlePasswordDialogKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handlePasswordDialogKeyDown);
+    };
+  }, [isChangingPassword, isPasswordDialogOpen]);
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
@@ -835,6 +873,47 @@ const Admin = () => {
       navigate(returnPath, { replace: true });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : '退出登录失败。');
+    }
+  };
+
+  const updatePasswordChangeField = (field: keyof PasswordChangeForm) => (event: ChangeEvent<HTMLInputElement>) => {
+    setPasswordChangeForm((current) => ({ ...current, [field]: event.target.value }));
+  };
+
+  const closePasswordDialog = () => {
+    if (isChangingPassword) return;
+
+    setPasswordChangeForm(emptyPasswordChangeForm());
+    setPasswordChangeError('');
+    setIsPasswordDialogOpen(false);
+  };
+
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordChangeError('');
+    setNotice('');
+
+    if (passwordChangeForm.newPassword !== passwordChangeForm.confirmPassword) {
+      setPasswordChangeError('新密码和确认密码不一致。');
+      return;
+    }
+
+    if (passwordChangeForm.newPassword.length < 6) {
+      setPasswordChangeError('新密码至少需要 6 位。');
+      return;
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      await changeAdminPassword(passwordChangeForm.currentPassword, passwordChangeForm.newPassword);
+      setPasswordChangeForm(emptyPasswordChangeForm());
+      setIsPasswordDialogOpen(false);
+      setNotice('密码已更新，下次登录请使用新密码。');
+    } catch (caughtError) {
+      setPasswordChangeError(caughtError instanceof Error ? caughtError.message : '密码修改失败。');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -1830,8 +1909,11 @@ const Admin = () => {
             <h1 className="text-xl font-black tracking-tight">站主后台</h1>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm font-bold text-slate-500 sm:inline">{user?.email}</span>
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <div className={adminHeaderIdentityClass} aria-label={`登录账号：${user?.email ?? '未知账号'}`}>
+              <UserRound className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+              <span className="block max-w-[220px] truncate">{user?.email}</span>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -1846,6 +1928,21 @@ const Admin = () => {
               <ArrowLeft className="h-4 w-4" />
               返回前台
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={adminHeaderButtonClass}
+              aria-controls="password-dialog"
+              aria-expanded={isPasswordDialogOpen}
+              aria-haspopup="dialog"
+              onClick={() => {
+                setPasswordChangeError('');
+                setIsPasswordDialogOpen(true);
+              }}
+            >
+              <KeyRound className="h-4 w-4" />
+              修改密码
+            </Button>
             <Button type="button" variant="outline" className={adminHeaderDangerButtonClass} onClick={() => void handleLogoutAdmin()}>
               <LogOut className="h-4 w-4" />
               退出登录
@@ -1853,6 +1950,104 @@ const Admin = () => {
           </div>
         </div>
       </header>
+
+      {isPasswordDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+          <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" aria-hidden="true" />
+          <section
+            id="password-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="password-dialog-title"
+            className="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_30px_80px_-35px_rgba(15,23,42,0.9)]"
+          >
+            <form onSubmit={handleChangePassword} className="space-y-4 p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">Security</p>
+                  <h2 id="password-dialog-title" className="mt-1 text-xl font-black text-slate-950">
+                    修改密码
+                  </h2>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+                  disabled={isChangingPassword}
+                  aria-label="关闭修改密码弹窗"
+                  onClick={closePasswordDialog}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-slate-600">当前密码</span>
+                <Input
+                  value={passwordChangeForm.currentPassword}
+                  type="password"
+                  autoComplete="current-password"
+                  onChange={updatePasswordChangeField('currentPassword')}
+                  disabled={isChangingPassword}
+                  autoFocus
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-slate-600">新密码</span>
+                <Input
+                  value={passwordChangeForm.newPassword}
+                  type="password"
+                  autoComplete="new-password"
+                  onChange={updatePasswordChangeField('newPassword')}
+                  disabled={isChangingPassword}
+                  minLength={6}
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-slate-600">确认新密码</span>
+                <Input
+                  value={passwordChangeForm.confirmPassword}
+                  type="password"
+                  autoComplete="new-password"
+                  onChange={updatePasswordChangeField('confirmPassword')}
+                  disabled={isChangingPassword}
+                  minLength={6}
+                  required
+                />
+              </label>
+
+              {passwordChangeError && (
+                <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700" aria-live="polite">
+                  {passwordChangeError}
+                </p>
+              )}
+
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={adminHeaderButtonClass}
+                  disabled={isChangingPassword}
+                  onClick={closePasswordDialog}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="submit"
+                  className="h-10 gap-2 bg-slate-950 text-white hover:bg-slate-800"
+                  disabled={isChangingPassword}
+                >
+                  {isChangingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  保存
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
       {notice && (
         <div className="pointer-events-none fixed left-1/2 top-3 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2" aria-live="polite">
@@ -2658,7 +2853,7 @@ const Admin = () => {
                         {aboutContent.contactItems.map((item, index) => (
                           <div key={`${item.label}-${index}`} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 xl:grid-cols-[1fr_1fr_120px_auto]">
                             <Input value={item.label} onChange={(event) => updateAboutContactItem(index, 'label', event.target.value)} placeholder="Email Me" />
-                            <Input value={item.value} onChange={(event) => updateAboutContactItem(index, 'value', event.target.value)} placeholder="lgj425425@126.com" />
+                            <Input value={item.value} onChange={(event) => updateAboutContactItem(index, 'value', event.target.value)} placeholder="you@example.com" />
                             <Input value={item.icon || ''} onChange={(event) => updateAboutContactItem(index, 'icon', event.target.value)} placeholder="mail" />
                             <Button type="button" variant="outline" size="sm" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => removeAboutContactItem(index)}>
                               <Trash2 className="h-3.5 w-3.5" />

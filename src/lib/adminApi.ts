@@ -1,4 +1,26 @@
-import { createNetworkErrorMessage, getApiUrl, readApiError, requestJson } from './siteApi';
+import { createNetworkErrorMessage, getApiUrl, readApiError, readCsrfToken, requestJson } from './siteApi';
+
+const uploadFetch = async (path: string, body: FormData, errorMessage: string) => {
+  const csrfToken = readCsrfToken();
+  let response: Response;
+
+  try {
+    response = await fetch(getApiUrl(path), {
+      method: 'POST',
+      credentials: 'include',
+      headers: csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {},
+      body,
+    });
+  } catch {
+    throw new Error(createNetworkErrorMessage(path));
+  }
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, errorMessage));
+  }
+
+  return response;
+};
 
 export type ContentStatus = 'draft' | 'published' | 'hidden';
 
@@ -167,6 +189,11 @@ export const logoutAdmin = () => requestJson<void>('/api/auth/logout', {
   method: 'POST',
 });
 
+export const changeAdminPassword = (currentPassword: string, newPassword: string) => requestJson<void>('/api/auth/password', {
+  method: 'PUT',
+  body: JSON.stringify({ currentPassword, newPassword }),
+});
+
 export const listAdminProjects = async () => (
   await requestJson<ListResponse<ProjectRecord>>('/api/admin/projects')
 ).items;
@@ -188,23 +215,7 @@ export const deleteProject = (id: string) => requestJson<void>(`/api/admin/proje
 export const uploadProjectAsset = async (file: File) => {
   const body = new FormData();
   body.append('file', file);
-
-  let response: Response;
-
-  try {
-    response = await fetch(getApiUrl('/api/admin/projects/assets'), {
-      method: 'POST',
-      credentials: 'include',
-      body,
-    });
-  } catch {
-    throw new Error(createNetworkErrorMessage('/api/admin/projects/assets'));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response, 'Project cover upload failed.'));
-  }
-
+  const response = await uploadFetch('/api/admin/projects/assets', body, 'Project cover upload failed.');
   return response.json() as Promise<ProjectAssetRecord>;
 };
 
@@ -239,23 +250,7 @@ export const uploadMediaAsset = async (file: File, blogPostId: string) => {
   const body = new FormData();
   body.append('file', file);
   body.append('blogPostId', blogPostId);
-
-  let response: Response;
-
-  try {
-    response = await fetch(getApiUrl('/api/admin/media-assets'), {
-      method: 'POST',
-      credentials: 'include',
-      body,
-    });
-  } catch {
-    throw new Error(createNetworkErrorMessage('/api/admin/media-assets'));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response, '图片上传失败，请稍后再试。'));
-  }
-
+  const response = await uploadFetch('/api/admin/media-assets', body, '图片上传失败，请稍后再试。');
   return response.json() as Promise<MediaAssetRecord>;
 };
 
@@ -285,23 +280,7 @@ export const updateAdminHomeGallerySlots = async (slots: HomeGallerySlotPayload[
 export const uploadHomeGallerySlotImage = async (slotKey: HomeGallerySlotKey, file: File) => {
   const body = new FormData();
   body.append('file', file);
-
-  let response: Response;
-
-  try {
-    response = await fetch(getApiUrl(`/api/admin/home-gallery-slots/${slotKey}/image`), {
-      method: 'POST',
-      credentials: 'include',
-      body,
-    });
-  } catch {
-    throw new Error(createNetworkErrorMessage(`/api/admin/home-gallery-slots/${slotKey}/image`));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response, '首页图片上传失败，请稍后再试。'));
-  }
-
+  const response = await uploadFetch(`/api/admin/home-gallery-slots/${slotKey}/image`, body, '首页图片上传失败，请稍后再试。');
   return response.json() as Promise<HomeGallerySlotRecord>;
 };
 
@@ -325,23 +304,7 @@ export const uploadGalleryPhoto = async (file: File, payload: GalleryPhotoPayloa
   body.append('takenAt', payload.takenAt);
   body.append('sortOrder', String(payload.sortOrder));
   body.append('status', payload.status);
-
-  let response: Response;
-
-  try {
-    response = await fetch(getApiUrl('/api/admin/gallery-photos'), {
-      method: 'POST',
-      credentials: 'include',
-      body,
-    });
-  } catch {
-    throw new Error(createNetworkErrorMessage('/api/admin/gallery-photos'));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response, '图册图片上传失败，请稍后再试。'));
-  }
-
+  const response = await uploadFetch('/api/admin/gallery-photos', body, '图册图片上传失败，请稍后再试。');
   return response.json() as Promise<GalleryPhotoRecord>;
 };
 
@@ -361,45 +324,13 @@ export const uploadResumeVersion = async (file: File, label: string) => {
   const body = new FormData();
   body.append('file', file);
   body.append('label', label);
-
-  let response: Response;
-
-  try {
-    response = await fetch(getApiUrl('/api/admin/resume-versions'), {
-      method: 'POST',
-      credentials: 'include',
-      body,
-    });
-  } catch {
-    throw new Error(createNetworkErrorMessage('/api/admin/resume-versions'));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response, '简历上传失败，请稍后再试。'));
-  }
-
+  const response = await uploadFetch('/api/admin/resume-versions', body, '简历上传失败，请稍后再试。');
   return response.json() as Promise<ResumeVersionRecord>;
 };
 
 export const uploadAboutAsset = async (file: File) => {
   const body = new FormData();
   body.append('file', file);
-
-  let response: Response;
-
-  try {
-    response = await fetch(getApiUrl('/api/admin/about/assets'), {
-      method: 'POST',
-      credentials: 'include',
-      body,
-    });
-  } catch {
-    throw new Error(createNetworkErrorMessage('/api/admin/about/assets'));
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response, '图片上传失败，请稍后再试。'));
-  }
-
+  const response = await uploadFetch('/api/admin/about/assets', body, '图片上传失败，请稍后再试。');
   return response.json() as Promise<AboutAssetRecord>;
 };

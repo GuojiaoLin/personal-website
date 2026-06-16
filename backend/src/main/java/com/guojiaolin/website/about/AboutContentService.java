@@ -93,8 +93,8 @@ public class AboutContentService {
         new AboutProfileDetail("基本信息", "林国娇 · 女 · 山东青岛", "user", null, true),
         new AboutProfileDetail("本科", "山东科技大学 软件工程", "graduation-cap", null, false),
         new AboutProfileDetail("硕士", "中国科学院大学 计算机技术", "graduation-cap", null, false),
-        new AboutProfileDetail("手机", "17664020797", "phone", "17664020797", false),
-        new AboutProfileDetail("邮箱", "lgj425425@126.com", "mail", "lgj425425@126.com", false)
+        new AboutProfileDetail("手机", "your-phone-number", "phone", "your-phone-number", false),
+        new AboutProfileDetail("邮箱", "you@example.com", "mail", "you@example.com", false)
       ),
       List.of(
         new AboutResumeEntry(
@@ -159,7 +159,7 @@ public class AboutContentService {
       ),
       "连接我的世界",
       List.of(
-        new AboutContactItem("Email Me", "lgj425425@126.com", "mail"),
+        new AboutContactItem("Email Me", "you@example.com", "mail"),
         new AboutContactItem("Location", "北京", "map-pin"),
         new AboutContactItem("Education", "中国科学院大学", "graduation-cap")
       ),

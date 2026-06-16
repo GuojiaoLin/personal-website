@@ -405,9 +405,9 @@ class ContentApiIntegrationTest {
               },
               {
                 "label": "邮箱",
-                "value": "lgj425425@126.com",
+                "value": "you@example.com",
                 "icon": "mail",
-                "copyValue": "lgj425425@126.com",
+                "copyValue": "you@example.com",
                 "wide": false
               }
             ],
@@ -434,7 +434,7 @@ class ContentApiIntegrationTest {
             "contactItems": [
               {
                 "label": "Email Me",
-                "value": "lgj425425@126.com",
+                "value": "you@example.com",
                 "icon": "mail"
               }
             ],
@@ -455,7 +455,7 @@ class ContentApiIntegrationTest {
     mockMvc.perform(get("/api/about"))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.portraitImageUrl").value("/assets/profile.jpg"))
-      .andExpect(jsonPath("$.profileDetails[1].copyValue").value("lgj425425@126.com"))
+      .andExpect(jsonPath("$.profileDetails[1].copyValue").value("you@example.com"))
       .andExpect(jsonPath("$.resumeEntries[0].description").value("这段内容来自后台。"))
       .andExpect(jsonPath("$.contactItems", hasSize(1)));
   }

@@ -2,6 +2,7 @@
 node_modules/
 dist/
 dist.zip
+deploy-*.tar.gz
 .npm-cache/
 .vite/
 *.tsbuildinfo
@@ -25,6 +26,7 @@ backup.sql
 .env
 .env.*
 !.env.example
+!**/.env.example
 *.local
 
 # ---- 日志 ----

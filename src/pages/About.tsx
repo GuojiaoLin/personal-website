@@ -12,8 +12,8 @@ const profileDetails = [
   { label: '基本信息', value: '林国娇 · 女 · 山东青岛', icon: 'user', wide: true },
   { label: '本科', value: '山东科技大学 软件工程', icon: 'graduation-cap' },
   { label: '硕士', value: '中国科学院大学 计算机技术', icon: 'graduation-cap' },
-  { label: '手机', value: '17664020797', icon: 'phone', copyValue: '17664020797' },
-  { label: '邮箱', value: 'lgj425425@126.com', icon: 'mail', copyValue: 'lgj425425@126.com' },
+  { label: '手机', value: 'your-phone-number', icon: 'phone', copyValue: 'your-phone-number' },
+  { label: '邮箱', value: 'you@example.com', icon: 'mail', copyValue: 'you@example.com' },
 ];
 
 const momozhiTechStack = [
@@ -198,7 +198,7 @@ const defaultAboutContent: AboutContentRecord = {
   ],
   contactHeading: '连接我的世界',
   contactItems: [
-    { label: 'Email Me', value: 'lgj425425@126.com', icon: 'mail' },
+    { label: 'Email Me', value: 'you@example.com', icon: 'mail' },
     { label: 'Location', value: '北京', icon: 'map-pin' },
     { label: 'Education', value: '中国科学院大学', icon: 'graduation-cap' },
   ],
