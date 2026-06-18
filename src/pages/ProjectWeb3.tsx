@@ -271,7 +271,7 @@ const ProjectWeb3 = () => {
           >
             <img
               src={heroImage}
-              className="w-full h-auto transition-transform duration-1000 group-hover:scale-[1.02]"
+              className="aspect-[16/9] w-full h-auto object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
               alt="多模态电商客服 Agent 工作台总览"
             />
             <span className="absolute top-5 right-5 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 text-slate-900 shadow-lg opacity-0 transition-all group-hover:opacity-100 group-hover:scale-105">
@@ -308,7 +308,7 @@ const ProjectWeb3 = () => {
                     className="relative block w-full bg-slate-50 aspect-video cursor-zoom-in group/preview"
                     onClick={() => openImagePreview(item)}
                   >
-                    <img src={item.image} alt={item.title} className="w-full h-full object-contain" />
+                    <img src={item.image} alt={item.title} loading="lazy" className="w-full h-full object-contain" />
                     <span className="absolute top-4 right-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/90 text-slate-900 shadow-md opacity-0 transition-all group-hover/preview:opacity-100 group-hover/preview:scale-105">
                       <Maximize2 className="h-5 w-5" />
                     </span>
@@ -352,7 +352,7 @@ const ProjectWeb3 = () => {
                   image: policyQuestionImage,
                 })}
               >
-                <img src={policyQuestionImage} alt="复杂售后问题拆解与质量面板" className="w-full h-auto" />
+                <img src={policyQuestionImage} alt="复杂售后问题拆解与质量面板" loading="lazy" className="aspect-[16/9] w-full h-auto object-cover" />
                 <span className="absolute top-4 right-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/90 text-slate-900 shadow-md opacity-0 transition-all group-hover/preview:opacity-100 group-hover/preview:scale-105">
                   <Maximize2 className="h-5 w-5" />
                 </span>
@@ -367,7 +367,7 @@ const ProjectWeb3 = () => {
                   image: policyLogisticsImage,
                 })}
               >
-                <img src={policyLogisticsImage} alt="物流售后处理与质量面板" className="w-full h-auto" />
+                <img src={policyLogisticsImage} alt="物流售后处理与质量面板" loading="lazy" className="aspect-[16/9] w-full h-auto object-cover" />
                 <span className="absolute top-4 right-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/90 text-slate-900 shadow-md opacity-0 transition-all group-hover/preview:opacity-100 group-hover/preview:scale-105">
                   <Maximize2 className="h-5 w-5" />
                 </span>
@@ -391,7 +391,7 @@ const ProjectWeb3 = () => {
                     className={`relative block w-full rounded-[28px] overflow-hidden border-[3px] border-white shadow-xl bg-slate-50 group/preview cursor-zoom-in text-left ${index % 2 === 1 ? 'lg:order-2' : ''}`}
                     onClick={() => openImagePreview(item)}
                   >
-                    <img src={item.image} alt={item.title} className="w-full h-auto" />
+                    <img src={item.image} alt={item.title} loading="lazy" className="aspect-[16/9] w-full h-auto object-cover" />
                     <span className="absolute top-4 right-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/90 text-slate-900 shadow-md opacity-0 transition-all group-hover/preview:opacity-100 group-hover/preview:scale-105">
                       <Maximize2 className="h-5 w-5" />
                     </span>
@@ -434,7 +434,7 @@ const ProjectWeb3 = () => {
           onClick={closeImagePreview}
         >
           <div
-            className="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl"
+            className="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-y-auto rounded-[28px] bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -446,12 +446,15 @@ const ProjectWeb3 = () => {
               <X className="h-5 w-5" />
             </button>
 
-            <div className="relative bg-slate-50 px-4 py-4 md:px-6 md:py-6">
-              <img
-                src={activeImage.image}
-                alt={activeImage.title}
-                className="mx-auto max-h-[64vh] w-full rounded-2xl object-contain"
-              />
+            <div className="relative shrink-0 bg-slate-50 px-4 py-4 md:px-6 md:py-6">
+              <div className="flex h-[42vh] min-h-[220px] w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-100 md:h-[58vh] md:min-h-[360px]">
+                <img
+                  key={activeImage.image}
+                  src={activeImage.image}
+                  alt={activeImage.title}
+                  className="h-full w-full object-contain"
+                />
+              </div>
               {activeGallery && activeGallery.length > 1 && (
                 <>
                   <button

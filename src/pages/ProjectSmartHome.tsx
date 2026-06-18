@@ -839,7 +839,7 @@ const ProjectSmartHome = () => {
           >
             <img
               src={momoOverviewImage}
-              className="h-auto w-full transition-transform duration-1000 group-hover:scale-[1.02]"
+              className="aspect-[16/9] h-auto w-full object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
               alt="墨墨知AI 论文辅助阅读助手项目总览"
             />
             <span className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 text-slate-900 opacity-0 shadow-lg transition-all group-hover:scale-105 group-hover:opacity-100">
@@ -923,7 +923,7 @@ const ProjectSmartHome = () => {
                       gallery: item.gallery,
                     })}
                   >
-                    <img src={item.image} alt={item.title} className="h-auto w-full transition-transform duration-700 group-hover/preview:scale-[1.02]" />
+                    <img src={item.image} alt={item.title} loading="lazy" className="aspect-[16/9] h-auto w-full object-cover transition-transform duration-700 group-hover/preview:scale-[1.02]" />
                     <span className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/90 text-slate-900 opacity-0 shadow-md transition-all group-hover/preview:scale-105 group-hover/preview:opacity-100">
                       <Maximize2 className="h-5 w-5" />
                     </span>
@@ -1018,7 +1018,7 @@ const ProjectSmartHome = () => {
           onClick={closeImagePreview}
         >
           <div
-            className="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl"
+            className="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-y-auto rounded-[28px] bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -1030,12 +1030,15 @@ const ProjectSmartHome = () => {
               <X className="h-5 w-5" />
             </button>
 
-            <div className="relative bg-slate-50 px-4 py-4 md:px-6 md:py-6">
-              <img
-                src={activeImage.image}
-                alt={activeImage.title}
-                className="mx-auto max-h-[64vh] w-full rounded-2xl object-contain"
-              />
+            <div className="relative shrink-0 bg-slate-50 px-4 py-4 md:px-6 md:py-6">
+              <div className="flex h-[42vh] min-h-[220px] w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-100 md:h-[58vh] md:min-h-[360px]">
+                <img
+                  key={activeImage.image}
+                  src={activeImage.image}
+                  alt={activeImage.title}
+                  className="h-full w-full object-contain"
+                />
+              </div>
               {activeGallery && activeGallery.length > 1 && (
                 <>
                   <button

@@ -91,10 +91,11 @@ const Projects = () => {
               >
                 <div className="relative group w-full lg:basis-[46%] lg:max-w-[460px]">
                   <div className="overflow-hidden rounded-[24px] border-[3px] border-white shadow-lg relative transition-all duration-500">
-                    <img 
-                      src={project.image} 
-                      alt={project.title} 
-                      className="w-full h-auto object-cover origin-center transition-transform duration-1000 group-hover/item:scale-110"
+                    <img
+                      src={project.image}
+                      alt={project.title}
+                      loading="lazy"
+                      className="aspect-[16/9] w-full h-auto object-cover origin-center transition-transform duration-1000 group-hover/item:scale-110"
                     />
                     <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>

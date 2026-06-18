@@ -34,13 +34,16 @@ public class ProjectAssetService {
 
   private final Path projectDirectory;
   private final String publicPath;
+  private final ProjectLogoImageService projectLogoImages;
 
   public ProjectAssetService(
+    ProjectLogoImageService projectLogoImages,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
     this.projectDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("projects").normalize();
     this.publicPath = normalizePublicPath(publicPath);
+    this.projectLogoImages = projectLogoImages;
   }
 
   public ProjectAssetResponse upload(MultipartFile file) {
@@ -70,7 +73,13 @@ public class ProjectAssetService {
         Files.copy(input, destination);
       }
 
-      return new ProjectAssetResponse(toPublicUrl(fileName), fileName, mimeType, file.getSize());
+      var optimized = projectLogoImages.process(destination, projectDirectory, fileName, mimeType);
+      return new ProjectAssetResponse(
+        toPublicUrl(optimized.fileName()),
+        optimized.fileName(),
+        optimized.mimeType(),
+        optimized.sizeBytes()
+      );
     } catch (IOException error) {
       throw new BadRequestException("Image upload failed.");
     }

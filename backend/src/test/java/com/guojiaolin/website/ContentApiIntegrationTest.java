@@ -1,5 +1,6 @@
 package com.guojiaolin.website;
 
+import static com.guojiaolin.website.TestImages.createJpegWithExifOrientation;
 import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
@@ -10,7 +11,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -34,6 +41,7 @@ class ContentApiIntegrationTest {
 
     var projectResponse = mockMvc.perform(post("/api/admin/projects")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -65,6 +73,7 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(post("/api/admin/blog-posts")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -100,6 +109,7 @@ class ContentApiIntegrationTest {
     mockMvc.perform(multipart("/api/admin/media-assets")
         .file(image)
         .param("blogPostId", firstBlogPostId)
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andExpect(jsonPath("$.fileName").value(fileName))
@@ -124,12 +134,70 @@ class ContentApiIntegrationTest {
       "id"
     );
 
-    mockMvc.perform(delete("/api/admin/media-assets/%s".formatted(assetId)).session(session))
+    mockMvc.perform(delete("/api/admin/media-assets/%s".formatted(assetId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
 
     mockMvc.perform(get("/api/admin/media-assets").param("blogPostId", firstBlogPostId).session(session))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.items", hasSize(0)));
+  }
+
+  @Test
+  void mediaAssetUploadOptimizesLargeBlogImages() throws Exception {
+    var session = login();
+    var projectId = createPublishedProject(session, "optimized-media-project-" + System.nanoTime());
+    var blogPostId = createPublishedBlogPost(session, projectId, "optimized-media", "Optimized media");
+    var fileName = "large blog image %d.png".formatted(System.nanoTime());
+    var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+    var originalBytes = createPngBytes(1800, 1200);
+    var image = new MockMultipartFile("file", fileName, "image/png", originalBytes);
+
+    var response = mockMvc.perform(multipart("/api/admin/media-assets")
+        .file(image)
+        .param("blogPostId", blogPostId)
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(baseName + ".jpg"))
+      .andExpect(jsonPath("$.mimeType").value("image/jpeg"))
+      .andExpect(jsonPath("$.url").value("/uploads/" + baseName.replace(" ", "%20") + ".jpg"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var optimizedPath = Path.of("target/test-uploads").resolve(JsonField.extract(response, "fileName"));
+    assertImageLongestSideAtMost(optimizedPath, 1600);
+    assertThat(Files.size(optimizedPath)).isLessThan((long) originalBytes.length);
+  }
+
+  @Test
+  void mediaAssetUploadAppliesExifOrientationEvenWhenImageDoesNotNeedResizing() throws Exception {
+    var session = login();
+    var projectId = createPublishedProject(session, "oriented-media-project-" + System.nanoTime());
+    var blogPostId = createPublishedBlogPost(session, projectId, "oriented-media", "Oriented media");
+    var fileName = "oriented blog image %d.jpg".formatted(System.nanoTime());
+    var image = new MockMultipartFile(
+      "file",
+      fileName,
+      "image/jpeg",
+      createJpegWithExifOrientation(1200, 800, 6)
+    );
+
+    var response = mockMvc.perform(multipart("/api/admin/media-assets")
+        .file(image)
+        .param("blogPostId", blogPostId)
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(fileName))
+      .andExpect(jsonPath("$.mimeType").value("image/jpeg"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var optimizedPath = Path.of("target/test-uploads").resolve(JsonField.extract(response, "fileName"));
+    assertImageLongestSideAtMost(optimizedPath, 1600);
+    assertImageIsPortrait(optimizedPath);
   }
 
   @Test
@@ -146,6 +214,7 @@ class ContentApiIntegrationTest {
         .param("takenAt", "2020")
         .param("sortOrder", "2")
         .param("status", "published")
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andExpect(jsonPath("$.title").value("屋檐小太阳"))
@@ -164,6 +233,7 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(put("/api/admin/gallery-photos/%s".formatted(photoId))
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -188,7 +258,7 @@ class ContentApiIntegrationTest {
       .andExpect(jsonPath("$.items", hasSize(1)))
       .andExpect(jsonPath("$.items[0].status").value("hidden"));
 
-    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(photoId)).session(session))
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(photoId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
 
     mockMvc.perform(get("/api/admin/gallery-photos").session(session))
@@ -207,6 +277,7 @@ class ContentApiIntegrationTest {
         .param("title", "Auto sort first")
         .param("description", "First uploaded photo")
         .param("status", "published")
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andReturn()
@@ -222,6 +293,7 @@ class ContentApiIntegrationTest {
         .param("title", "Auto sort second")
         .param("description", "Second uploaded photo")
         .param("status", "published")
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andReturn()
@@ -232,10 +304,46 @@ class ContentApiIntegrationTest {
     var secondSortOrder = JsonField.extractInt(secondResponse, "sortOrder");
     assertThat(secondSortOrder).isEqualTo(firstSortOrder + 1);
 
-    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(firstPhotoId)).session(session))
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(firstPhotoId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
 
-    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(secondPhotoId)).session(session))
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(secondPhotoId)).with(csrf()).session(session))
+      .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void galleryUploadCreatesDerivativeImagesForListAndPreview() throws Exception {
+    var session = login();
+    var fileName = "large-gallery-%d.jpg".formatted(System.nanoTime());
+    var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+    var image = new MockMultipartFile("file", fileName, "image/jpeg", createJpegBytes(2200, 1400));
+
+    var createResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(image)
+        .param("title", "Large gallery photo")
+        .param("description", "Should create responsive derivatives")
+        .param("status", "published")
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.url").value("/uploads/gallery/" + fileName))
+      .andExpect(jsonPath("$.thumbnailUrl").value("/uploads/gallery/" + baseName + "-thumbnail.jpg"))
+      .andExpect(jsonPath("$.mediumUrl").value("/uploads/gallery/" + baseName + "-medium.jpg"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var photoId = JsonField.extract(createResponse, "id");
+    var originalPath = resolveUploadPath(JsonField.extract(createResponse, "url"));
+    var thumbnailPath = resolveUploadPath(JsonField.extract(createResponse, "thumbnailUrl"));
+    var mediumPath = resolveUploadPath(JsonField.extract(createResponse, "mediumUrl"));
+
+    assertImageLongestSideAtMost(thumbnailPath, 640);
+    assertImageLongestSideAtMost(mediumPath, 1600);
+    assertThat(Files.size(thumbnailPath)).isLessThan(Files.size(originalPath));
+    assertThat(Files.size(mediumPath)).isLessThan(Files.size(originalPath));
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(photoId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
   }
 
@@ -250,6 +358,7 @@ class ContentApiIntegrationTest {
         .param("title", "Home hero")
         .param("description", "Hero floating card")
         .param("status", "published")
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andReturn()
@@ -261,6 +370,7 @@ class ContentApiIntegrationTest {
         .param("title", "Hidden home photo")
         .param("description", "Should stay private")
         .param("status", "hidden")
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andReturn()
@@ -272,6 +382,7 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(put("/api/admin/home-gallery-slots")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -302,10 +413,10 @@ class ContentApiIntegrationTest {
       .andExpect(jsonPath("$.items[2].slotKey").value("life-card"))
       .andExpect(jsonPath("$.items[2].photo", nullValue()));
 
-    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(publishedPhotoId)).session(session))
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(publishedPhotoId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
 
-    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(hiddenPhotoId)).session(session))
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(hiddenPhotoId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
   }
 
@@ -316,6 +427,7 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(multipart("/api/admin/home-gallery-slots/hero-polaroid/image")
         .file(new MockMultipartFile("file", fileName, "image/png", new byte[] { 1, 2, 3 }))
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andExpect(jsonPath("$.slotKey").value("hero-polaroid"))
@@ -340,6 +452,7 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(multipart("/api/admin/resume-versions")
         .file(firstResume)
+        .with(csrf())
         .param("label", "Java 后端简历 v1")
         .session(session))
       .andExpect(status().isCreated())
@@ -349,6 +462,7 @@ class ContentApiIntegrationTest {
 
     var secondResponse = mockMvc.perform(multipart("/api/admin/resume-versions")
         .file(secondResume)
+        .with(csrf())
         .param("label", "Java 后端简历 v2")
         .session(session))
       .andExpect(status().isCreated())
@@ -364,7 +478,7 @@ class ContentApiIntegrationTest {
       .andExpect(jsonPath("$.label").value("Java 后端简历 v1"))
       .andExpect(jsonPath("$.url").value("/uploads/resumes/" + firstResumeName));
 
-    mockMvc.perform(put("/api/admin/resume-versions/%s/activate".formatted(secondResumeId)).session(session))
+    mockMvc.perform(put("/api/admin/resume-versions/%s/activate".formatted(secondResumeId)).with(csrf()).session(session))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.label").value("Java 后端简历 v2"))
       .andExpect(jsonPath("$.active").value(true));
@@ -391,6 +505,7 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(put("/api/admin/about")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -468,12 +583,38 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(multipart("/api/admin/about/assets")
         .file(image)
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andExpect(jsonPath("$.fileName").value(fileName))
       .andExpect(jsonPath("$.mimeType").value("image/png"))
       .andExpect(jsonPath("$.sizeBytes").value(3))
       .andExpect(jsonPath("$.url").value("/uploads/about/" + fileName.replace(" ", "%20")));
+  }
+
+  @Test
+  void aboutAssetUploadOptimizesLargeImages() throws Exception {
+    var session = login();
+    var fileName = "large about image %d.png".formatted(System.nanoTime());
+    var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+    var originalBytes = createPngBytes(1800, 1200);
+    var image = new MockMultipartFile("file", fileName, "image/png", originalBytes);
+
+    var response = mockMvc.perform(multipart("/api/admin/about/assets")
+        .file(image)
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(baseName + ".jpg"))
+      .andExpect(jsonPath("$.mimeType").value("image/jpeg"))
+      .andExpect(jsonPath("$.url").value("/uploads/about/" + baseName.replace(" ", "%20") + ".jpg"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var optimizedPath = Path.of("target/test-uploads/about").resolve(JsonField.extract(response, "fileName"));
+    assertImageLongestSideAtMost(optimizedPath, 1600);
+    assertThat(Files.size(optimizedPath)).isLessThan((long) originalBytes.length);
   }
 
   @Test
@@ -484,12 +625,67 @@ class ContentApiIntegrationTest {
 
     mockMvc.perform(multipart("/api/admin/projects/assets")
         .file(image)
+        .with(csrf())
         .session(session))
       .andExpect(status().isCreated())
       .andExpect(jsonPath("$.fileName").value(fileName))
       .andExpect(jsonPath("$.mimeType").value("image/png"))
       .andExpect(jsonPath("$.sizeBytes").value(3))
       .andExpect(jsonPath("$.url").value("/uploads/projects/" + fileName.replace(" ", "%20")));
+  }
+
+  @Test
+  void projectCoverUploadOptimizesLargeImages() throws Exception {
+    var session = login();
+    var fileName = "large project cover %d.png".formatted(System.nanoTime());
+    var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+    var originalBytes = createPngBytes(1800, 1200);
+    var image = new MockMultipartFile("file", fileName, "image/png", originalBytes);
+
+    var response = mockMvc.perform(multipart("/api/admin/projects/assets")
+        .file(image)
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(baseName + ".png"))
+      .andExpect(jsonPath("$.mimeType").value("image/png"))
+      .andExpect(jsonPath("$.url").value("/uploads/projects/" + baseName.replace(" ", "%20") + ".png"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var optimizedPath = Path.of("target/test-uploads/projects").resolve(JsonField.extract(response, "fileName"));
+    assertImageLongestSideAtMost(optimizedPath, 1600);
+    assertThat(Files.size(optimizedPath)).isLessThan((long) originalBytes.length);
+  }
+
+  @Test
+  void projectCoverUploadProcessesGeneratedLogoImage() throws Exception {
+    var session = login();
+    var fileName = "generated logo %d.png".formatted(System.nanoTime());
+    var image = new MockMultipartFile(
+      "file",
+      fileName,
+      "image/png",
+      Files.readAllBytes(Path.of("..", "design", "logo.png"))
+    );
+
+    var response = mockMvc.perform(multipart("/api/admin/projects/assets")
+        .file(image)
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(fileName))
+      .andExpect(jsonPath("$.mimeType").value("image/png"))
+      .andExpect(jsonPath("$.url").value("/uploads/projects/" + fileName.replace(" ", "%20")))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var processedPath = Path.of("target/test-uploads/projects").resolve(JsonField.extract(response, "fileName"));
+    var logo = ImageIO.read(processedPath.toFile());
+    assertThat(logo.getRGB(0, 0) & 0xffffff).isEqualTo(0xffff00);
+    logo.flush();
   }
 
   @Test
@@ -564,7 +760,7 @@ class ContentApiIntegrationTest {
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.items", hasSize(0)));
 
-    mockMvc.perform(put("/api/admin/comments/%s/approve".formatted(commentId)).session(session))
+    mockMvc.perform(put("/api/admin/comments/%s/approve".formatted(commentId)).with(csrf()).session(session))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.status").value("approved"));
 
@@ -573,7 +769,7 @@ class ContentApiIntegrationTest {
       .andExpect(jsonPath("$.items", hasSize(1)))
       .andExpect(jsonPath("$.items[0].content").value("这篇讲得很清楚。"));
 
-    mockMvc.perform(delete("/api/admin/comments/%s".formatted(commentId)).session(session))
+    mockMvc.perform(delete("/api/admin/comments/%s".formatted(commentId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
   }
 
@@ -628,7 +824,7 @@ class ContentApiIntegrationTest {
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.items", hasSize(0)));
 
-    mockMvc.perform(put("/api/admin/comments/%s/approve".formatted(commentId)).session(session))
+    mockMvc.perform(put("/api/admin/comments/%s/approve".formatted(commentId)).with(csrf()).session(session))
       .andExpect(status().isOk());
 
     var replyResponse = mockMvc.perform(post("/api/comments")
@@ -649,7 +845,7 @@ class ContentApiIntegrationTest {
 
     var replyId = JsonField.extract(replyResponse, "id");
 
-    mockMvc.perform(put("/api/admin/comments/%s/approve".formatted(replyId)).session(session))
+    mockMvc.perform(put("/api/admin/comments/%s/approve".formatted(replyId)).with(csrf()).session(session))
       .andExpect(status().isOk());
 
     mockMvc.perform(get("/api/comments/guestbook"))
@@ -664,6 +860,7 @@ class ContentApiIntegrationTest {
     var session = new MockHttpSession();
     mockMvc.perform(post("/api/auth/login")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -678,6 +875,7 @@ class ContentApiIntegrationTest {
   private String createPublishedProject(MockHttpSession session) throws Exception {
     var response = mockMvc.perform(post("/api/admin/projects")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -700,6 +898,7 @@ class ContentApiIntegrationTest {
   private String createPublishedProject(MockHttpSession session, String slug) throws Exception {
     var response = mockMvc.perform(post("/api/admin/projects")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -722,6 +921,7 @@ class ContentApiIntegrationTest {
   private String createPublishedBlogPost(MockHttpSession session, String projectId) throws Exception {
     var response = mockMvc.perform(post("/api/admin/blog-posts")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -751,6 +951,7 @@ class ContentApiIntegrationTest {
   ) throws Exception {
     var response = mockMvc.perform(post("/api/admin/blog-posts")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -783,6 +984,7 @@ class ContentApiIntegrationTest {
   ) throws Exception {
     var response = mockMvc.perform(post("/api/admin/blog-posts")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -804,6 +1006,57 @@ class ContentApiIntegrationTest {
       .getContentAsString();
 
     return JsonField.extract(response, "id");
+  }
+
+  private byte[] createJpegBytes(int width, int height) throws Exception {
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        var red = (x * 17 + y * 3) % 256;
+        var green = (x * 5 + y * 13) % 256;
+        var blue = (x * 11 + y * 7) % 256;
+        image.setRGB(x, y, (red << 16) | (green << 8) | blue);
+      }
+    }
+
+    var output = new ByteArrayOutputStream();
+    ImageIO.write(image, "jpg", output);
+    return output.toByteArray();
+  }
+
+  private byte[] createPngBytes(int width, int height) throws Exception {
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        var red = (x * 17 + y * 3) % 256;
+        var green = (x * 5 + y * 13) % 256;
+        var blue = (x * 11 + y * 7) % 256;
+        image.setRGB(x, y, (red << 16) | (green << 8) | blue);
+      }
+    }
+
+    var output = new ByteArrayOutputStream();
+    ImageIO.write(image, "png", output);
+    return output.toByteArray();
+  }
+
+  private Path resolveUploadPath(String url) {
+    assertThat(url).startsWith("/uploads/");
+    return Path.of("target/test-uploads").resolve(url.substring("/uploads/".length()));
+  }
+
+  private void assertImageLongestSideAtMost(Path path, int maxSide) throws Exception {
+    assertThat(Files.exists(path)).isTrue();
+    var image = ImageIO.read(path.toFile());
+    assertThat(image).isNotNull();
+    assertThat(Math.max(image.getWidth(), image.getHeight())).isLessThanOrEqualTo(maxSide);
+  }
+
+  private void assertImageIsPortrait(Path path) throws Exception {
+    assertThat(Files.exists(path)).isTrue();
+    var image = ImageIO.read(path.toFile());
+    assertThat(image).isNotNull();
+    assertThat(image.getHeight()).isGreaterThan(image.getWidth());
   }
 
   private static final class JsonField {

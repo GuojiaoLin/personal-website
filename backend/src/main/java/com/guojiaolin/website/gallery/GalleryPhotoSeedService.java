@@ -61,6 +61,7 @@ public class GalleryPhotoSeedService implements ApplicationRunner {
   );
 
   private final GalleryPhotoRepository galleryPhotos;
+  private final GalleryImageDerivativeService imageDerivatives;
   private final Path uploadGalleryDirectory;
   private final String publicPath;
   private final boolean enabled;
@@ -68,12 +69,14 @@ public class GalleryPhotoSeedService implements ApplicationRunner {
 
   public GalleryPhotoSeedService(
     GalleryPhotoRepository galleryPhotos,
+    GalleryImageDerivativeService imageDerivatives,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath,
     @Value("${site.gallery.seed.enabled:false}") boolean enabled,
     @Value("${site.gallery.seed.source-directory:}") String configuredSourceDirectory
   ) {
     this.galleryPhotos = galleryPhotos;
+    this.imageDerivatives = imageDerivatives;
     this.uploadGalleryDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("gallery").normalize();
     this.publicPath = normalizePublicPath(publicPath);
     this.enabled = enabled;
@@ -111,6 +114,7 @@ public class GalleryPhotoSeedService implements ApplicationRunner {
           Files.copy(source, target);
         }
 
+        var derivatives = imageDerivatives.createDerivatives(target, uploadGalleryDirectory, fileName);
         var detail = detailAt(index);
         var photo = new GalleryPhoto();
         photo.setTitle(detail.title());
@@ -123,6 +127,8 @@ public class GalleryPhotoSeedService implements ApplicationRunner {
         photo.setMimeType(mimeTypeFor(fileName));
         photo.setSizeBytes(Files.size(source));
         photo.setUrl(toPublicUrl(fileName));
+        photo.setThumbnailUrl(toPublicUrl(derivatives.thumbnailFileName()));
+        photo.setMediumUrl(toPublicUrl(derivatives.mediumFileName()));
         galleryPhotos.save(photo);
       }
 

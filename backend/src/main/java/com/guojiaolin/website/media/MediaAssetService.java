@@ -1,6 +1,7 @@
 package com.guojiaolin.website.media;
 
 import com.guojiaolin.website.common.BadRequestException;
+import com.guojiaolin.website.common.ImageUploadOptimizationService;
 import com.guojiaolin.website.common.NotFoundException;
 import com.guojiaolin.website.content.BlogPostRepository;
 import com.guojiaolin.website.media.dto.MediaAssetResponse;
@@ -42,10 +43,12 @@ public class MediaAssetService {
   private final BlogPostRepository blogPosts;
   private final Path uploadDirectory;
   private final String publicPath;
+  private final ImageUploadOptimizationService imageOptimizer;
 
   public MediaAssetService(
     MediaAssetRepository mediaAssets,
     BlogPostRepository blogPosts,
+    ImageUploadOptimizationService imageOptimizer,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
@@ -53,6 +56,7 @@ public class MediaAssetService {
     this.blogPosts = blogPosts;
     this.uploadDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize();
     this.publicPath = normalizePublicPath(publicPath);
+    this.imageOptimizer = imageOptimizer;
   }
 
   @Transactional(readOnly = true)
@@ -99,11 +103,12 @@ public class MediaAssetService {
         Files.copy(input, destination);
       }
 
+      var optimized = imageOptimizer.optimize(destination, uploadDirectory, fileName, mimeType);
       var asset = new MediaAsset();
-      asset.setFileName(fileName);
-      asset.setMimeType(mimeType);
-      asset.setSizeBytes(file.getSize());
-      asset.setUrl(toPublicUrl(fileName));
+      asset.setFileName(optimized.fileName());
+      asset.setMimeType(optimized.mimeType());
+      asset.setSizeBytes(optimized.sizeBytes());
+      asset.setUrl(toPublicUrl(optimized.fileName()));
       asset.setBlogPost(blogPost);
 
       return MediaAssetResponse.from(mediaAssets.save(asset));

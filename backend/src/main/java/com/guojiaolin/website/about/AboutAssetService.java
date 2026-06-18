@@ -2,6 +2,7 @@ package com.guojiaolin.website.about;
 
 import com.guojiaolin.website.about.dto.AboutAssetResponse;
 import com.guojiaolin.website.common.BadRequestException;
+import com.guojiaolin.website.common.ImageUploadOptimizationService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -34,13 +35,16 @@ public class AboutAssetService {
 
   private final Path aboutDirectory;
   private final String publicPath;
+  private final ImageUploadOptimizationService imageOptimizer;
 
   public AboutAssetService(
+    ImageUploadOptimizationService imageOptimizer,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
     this.aboutDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("about").normalize();
     this.publicPath = normalizePublicPath(publicPath);
+    this.imageOptimizer = imageOptimizer;
   }
 
   public AboutAssetResponse upload(MultipartFile file) {
@@ -70,7 +74,13 @@ public class AboutAssetService {
         Files.copy(input, destination);
       }
 
-      return new AboutAssetResponse(toPublicUrl(fileName), fileName, mimeType, file.getSize());
+      var optimized = imageOptimizer.optimize(destination, aboutDirectory, fileName, mimeType);
+      return new AboutAssetResponse(
+        toPublicUrl(optimized.fileName()),
+        optimized.fileName(),
+        optimized.mimeType(),
+        optimized.sizeBytes()
+      );
     } catch (IOException error) {
       throw new BadRequestException("Image upload failed.");
     }

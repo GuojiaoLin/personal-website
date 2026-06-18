@@ -210,7 +210,7 @@ const resolveAboutContent = (content: AboutContentRecord): AboutContentRecord =>
   portraitImageUrl: content.portraitImageUrl?.trim() || profilePortraitImage,
   wechatQrImageUrl: content.wechatQrImageUrl?.trim() || wechatQrImage,
   profileDetails: content.profileDetails?.length ? content.profileDetails : defaultAboutContent.profileDetails,
-  resumeEntries: content.resumeEntries?.length ? content.resumeEntries : defaultAboutContent.resumeEntries,
+  resumeEntries: Array.isArray(content.resumeEntries) ? content.resumeEntries : defaultAboutContent.resumeEntries,
   contactHeading: content.contactHeading?.trim() || defaultAboutContent.contactHeading,
   contactItems: content.contactItems?.length ? content.contactItems : defaultAboutContent.contactItems,
   socialLinks: [],
@@ -335,72 +335,74 @@ const About = () => {
           </div>
 
           {/* Resume Sections */}
-          <div className="space-y-24">
-            {orderedResumeEntries.map((entry) => (
-              <motion.div
-                key={`${entry.title}-${entry.sortOrder ?? 0}`}
-                initial={{ opacity: 0, y: 40 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-100px" }}
-                className="group relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-lg shadow-slate-100 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-[#FFFF00]/80 hover:shadow-[0_28px_72px_-38px_rgba(15,23,42,0.48)] md:p-8"
-              >
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#FFFF00] to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-[#FFFF00]/10 opacity-0 blur-3xl transition-opacity duration-300 group-hover:opacity-100" />
+          {orderedResumeEntries.length > 0 && (
+            <div className="space-y-24">
+              {orderedResumeEntries.map((entry) => (
+                <motion.div
+                  key={`${entry.title}-${entry.sortOrder ?? 0}`}
+                  initial={{ opacity: 0, y: 40 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-100px" }}
+                  className="group relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-lg shadow-slate-100 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-[#FFFF00]/80 hover:shadow-[0_28px_72px_-38px_rgba(15,23,42,0.48)] md:p-8"
+                >
+                  <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#FFFF00] to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                  <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-[#FFFF00]/10 opacity-0 blur-3xl transition-opacity duration-300 group-hover:opacity-100" />
 
-                <div className="relative z-10 border-b border-slate-100 pb-5">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-400">
-                      {entry.category || 'Project Resume'}
-                    </p>
-                    <h2 className="mt-2 text-xl font-black leading-snug text-slate-950 md:text-2xl">
-                      {entry.title}
-                    </h2>
-                    {(entry.meta || entry.period) && (
-                      <div className={`mt-2 flex flex-col gap-1 sm:flex-row sm:items-center ${entry.meta ? 'sm:justify-between' : 'sm:justify-end'}`}>
-                        {entry.meta && (
-                          <p className="text-sm font-bold text-slate-500">{entry.meta}</p>
-                        )}
-                        {entry.period && (
-                          <p className="shrink-0 text-sm font-black text-slate-700 sm:ml-4 sm:text-right">{entry.period}</p>
-                        )}
+                  <div className="relative z-10 border-b border-slate-100 pb-5">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-400">
+                        {entry.category || 'Project Resume'}
+                      </p>
+                      <h2 className="mt-2 text-xl font-black leading-snug text-slate-950 md:text-2xl">
+                        {entry.title}
+                      </h2>
+                      {(entry.meta || entry.period) && (
+                        <div className={`mt-2 flex flex-col gap-1 sm:flex-row sm:items-center ${entry.meta ? 'sm:justify-between' : 'sm:justify-end'}`}>
+                          {entry.meta && (
+                            <p className="text-sm font-bold text-slate-500">{entry.meta}</p>
+                          )}
+                          {entry.period && (
+                            <p className="shrink-0 text-sm font-black text-slate-700 sm:ml-4 sm:text-right">{entry.period}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="relative z-10 mt-5 space-y-4 text-sm leading-relaxed text-slate-700 md:text-base">
+                    {entry.techStack && entry.techStack.length > 0 && (
+                      <p>
+                        <span className="font-black text-slate-950">技术栈：</span>
+                        <span className="font-semibold">{entry.techStack.join('、')}</span>
+                      </p>
+                    )}
+                    {entry.description && (
+                      <p>
+                        <span className="font-black text-slate-950">{entry.descriptionLabel || '项目描述'}：</span>
+                        {entry.description}
+                      </p>
+                    )}
+                    {entry.highlights && entry.highlights.length > 0 && (
+                      <div>
+                        <p className="font-black text-slate-950">{entry.highlightsLabel || '项目亮点'}：</p>
+                        <ul className="mt-3 space-y-3">
+                          {entry.highlights.map((item) => (
+                            <li key={`${entry.title}-${item.title}`} className="grid grid-cols-[0.75rem_1fr] gap-3">
+                              <span className="mt-[0.65rem] h-1.5 w-1.5 rounded-full bg-slate-950" />
+                              <p>
+                                <span className="font-black text-slate-950">{item.title}：</span>
+                                <span className="font-medium text-slate-600">{item.detail}</span>
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>
-                </div>
-
-                <div className="relative z-10 mt-5 space-y-4 text-sm leading-relaxed text-slate-700 md:text-base">
-                  {entry.techStack && entry.techStack.length > 0 && (
-                    <p>
-                      <span className="font-black text-slate-950">技术栈：</span>
-                      <span className="font-semibold">{entry.techStack.join('、')}</span>
-                    </p>
-                  )}
-                  {entry.description && (
-                    <p>
-                      <span className="font-black text-slate-950">{entry.descriptionLabel || '项目描述'}：</span>
-                      {entry.description}
-                    </p>
-                  )}
-                  {entry.highlights && entry.highlights.length > 0 && (
-                    <div>
-                      <p className="font-black text-slate-950">{entry.highlightsLabel || '项目亮点'}：</p>
-                      <ul className="mt-3 space-y-3">
-                        {entry.highlights.map((item) => (
-                          <li key={`${entry.title}-${item.title}`} className="grid grid-cols-[0.75rem_1fr] gap-3">
-                            <span className="mt-[0.65rem] h-1.5 w-1.5 rounded-full bg-slate-950" />
-                            <p>
-                              <span className="font-black text-slate-950">{item.title}：</span>
-                              <span className="font-medium text-slate-600">{item.detail}</span>
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
 
 
           {/* Contact Info Card */}
@@ -460,11 +462,16 @@ const About = () => {
             <h2 id="wechat-dialog-title" className="mb-5 text-2xl font-black tracking-tight text-slate-950">
               微信添加好友
             </h2>
-            <img
-              src={aboutContent.wechatQrImageUrl || wechatQrImage}
-              alt="微信添加好友二维码"
-              className="mx-auto w-full max-w-[280px] rounded-2xl border border-slate-100 shadow-sm"
-            />
+            <div className="mx-auto grid aspect-square w-full max-w-[280px] place-items-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 shadow-sm">
+              <img
+                src={aboutContent.wechatQrImageUrl || wechatQrImage}
+                alt="微信添加好友二维码"
+                width={280}
+                height={280}
+                decoding="async"
+                className="h-full w-full object-contain"
+              />
+            </div>
             <p className="mt-5 text-sm font-bold leading-6 text-slate-500">
               扫一扫，添加我为微信好友。
             </p>

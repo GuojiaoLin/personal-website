@@ -1,6 +1,7 @@
 package com.guojiaolin.website.home;
 
 import com.guojiaolin.website.common.BadRequestException;
+import com.guojiaolin.website.common.ImageUploadOptimizationService;
 import com.guojiaolin.website.common.NotFoundException;
 import com.guojiaolin.website.content.ContentStatus;
 import com.guojiaolin.website.gallery.GalleryPhoto;
@@ -60,17 +61,20 @@ public class HomeGallerySlotService {
 
   private final HomeGallerySlotRepository homeGallerySlots;
   private final GalleryPhotoRepository galleryPhotos;
+  private final ImageUploadOptimizationService imageOptimizer;
   private final Path homeImageDirectory;
   private final String publicPath;
 
   public HomeGallerySlotService(
     HomeGallerySlotRepository homeGallerySlots,
     GalleryPhotoRepository galleryPhotos,
+    ImageUploadOptimizationService imageOptimizer,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
     this.homeGallerySlots = homeGallerySlots;
     this.galleryPhotos = galleryPhotos;
+    this.imageOptimizer = imageOptimizer;
     this.homeImageDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("home").normalize();
     this.publicPath = normalizePublicPath(publicPath);
   }
@@ -149,6 +153,7 @@ public class HomeGallerySlotService {
       try (var input = file.getInputStream()) {
         Files.copy(input, destination);
       }
+      var optimized = imageOptimizer.optimize(destination, homeImageDirectory, fileName, mimeType);
 
       var slot = homeGallerySlots.findBySlotKey(slotKey).orElseGet(() -> {
         var created = new HomeGallerySlot();
@@ -158,10 +163,10 @@ public class HomeGallerySlotService {
 
       deleteUploadedFile(slot);
       slot.setGalleryPhoto(null);
-      slot.setUploadedFileName(fileName);
-      slot.setUploadedMimeType(mimeType);
-      slot.setUploadedSizeBytes(file.getSize());
-      slot.setUploadedImageUrl(toPublicUrl(fileName));
+      slot.setUploadedFileName(optimized.fileName());
+      slot.setUploadedMimeType(optimized.mimeType());
+      slot.setUploadedSizeBytes(optimized.sizeBytes());
+      slot.setUploadedImageUrl(toPublicUrl(optimized.fileName()));
       var saved = homeGallerySlots.save(slot);
 
       return HomeGallerySlotResponse.of(slotKey, saved, null, titleForSlot(slotKey));

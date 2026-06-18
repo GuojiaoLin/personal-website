@@ -8,6 +8,8 @@ import { type GalleryPhotoRecord, listGalleryPhotos } from '../lib/adminApi';
 interface Photo {
   id: string;
   url: string;
+  thumbnailUrl?: string | null;
+  mediumUrl?: string | null;
   title: string;
   description: string;
   location: string;
@@ -20,6 +22,9 @@ const galleryImageModules = import.meta.glob('../../docs/images/图册/*.{jpg,jp
   query: '?url',
   import: 'default',
 }) as Record<string, string>;
+
+const STATIC_IMAGE_VERSION = '20260616-image-optimization';
+const versionStaticImage = (url: string) => `${url}?v=${STATIC_IMAGE_VERSION}`;
 
 const aspectRatios = ['aspect-[4/5]', 'aspect-[1/1]', 'aspect-[3/4]', 'aspect-[16/10]', 'aspect-[5/4]', 'aspect-[2/3]', 'aspect-[4/3]'];
 
@@ -94,7 +99,7 @@ const fallbackPhotos: Photo[] = orderedGalleryEntries
 
     return {
       id: String(index + 1),
-      url,
+      url: versionStaticImage(url),
       title: detail.title,
       description: detail.description,
       location: '生活图册',
@@ -117,6 +122,8 @@ const photoFromGalleryRecord = (photo: GalleryPhotoRecord): Photo => {
   return {
     id: photo.id,
     url: photo.url,
+    thumbnailUrl: photo.thumbnailUrl || photo.url,
+    mediumUrl: photo.mediumUrl || photo.url,
     title: photo.title,
     description: photo.description,
     location: photo.location || '生活图册',
@@ -129,6 +136,8 @@ const galleryShuffleSalt = 'photography-gallery-shuffle-v1';
 
 const getGalleryShuffleKey = (photo: Photo) => [
   photo.url,
+  photo.thumbnailUrl || '',
+  photo.mediumUrl || '',
   photo.title,
   photo.description,
   photo.location,
@@ -211,8 +220,10 @@ const PhotoCard = ({
   >
     <div className={`overflow-hidden relative ${photo.aspectRatio}`}>
       <img
-        src={photo.url}
+        src={photo.thumbnailUrl || photo.url}
         alt={photo.title}
+        loading="lazy"
+        decoding="async"
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
       />
       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6">
@@ -316,8 +327,9 @@ const Photography = () => {
             >
               <div className="relative h-[42vh] min-h-[280px] overflow-hidden bg-slate-50 lg:h-full lg:min-h-0 lg:basis-[56%]">
                 <img
-                  src={selectedPhoto.url}
+                  src={selectedPhoto.mediumUrl || selectedPhoto.url}
                   alt={selectedPhoto.title}
+                  decoding="async"
                   className="absolute inset-0 h-full w-full object-cover"
                 />
               </div>

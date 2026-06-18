@@ -3,6 +3,7 @@ package com.guojiaolin.website;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -41,6 +42,7 @@ class AuthFlowIntegrationTest {
 
     mockMvc.perform(post("/api/auth/login")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -63,6 +65,7 @@ class AuthFlowIntegrationTest {
   @Test
   void loginRejectsWrongPassword() throws Exception {
     mockMvc.perform(post("/api/auth/login")
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -80,6 +83,7 @@ class AuthFlowIntegrationTest {
 
     mockMvc.perform(put("/api/auth/password")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -90,6 +94,7 @@ class AuthFlowIntegrationTest {
       .andExpect(status().isNoContent());
 
     mockMvc.perform(post("/api/auth/login")
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -100,6 +105,7 @@ class AuthFlowIntegrationTest {
       .andExpect(status().isUnauthorized());
 
     mockMvc.perform(post("/api/auth/login")
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -117,6 +123,7 @@ class AuthFlowIntegrationTest {
 
     mockMvc.perform(put("/api/auth/password")
         .session(session)
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {
@@ -143,6 +150,7 @@ class AuthFlowIntegrationTest {
 
   private MockHttpSession login(String email, String password) throws Exception {
     return (MockHttpSession) mockMvc.perform(post("/api/auth/login")
+        .with(csrf())
         .contentType("application/json")
         .content("""
           {

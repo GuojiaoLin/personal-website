@@ -7,16 +7,38 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Comments } from '../components/Comments';
 import { BackToTopButton } from '../components/BackToTopButton';
-import { type BlogPost, type BlogProject, blogProjects as localBlogProjects, formatPostDate } from '../lib/blog';
 import { renderInlineMarkdown, renderMarkdown } from '../lib/markdown';
 import { ProjectIconGlyph } from '../lib/projectIcons';
 import { requestJson } from '../lib/siteApi';
 
-const momoLogoImage = new URL('../../docs/images/项目/墨墨知AI/momozhi_cat.png', import.meta.url).href;
-const mmcsaLogoImage = new URL('../../design/logo-mmcsa-yellow.png', import.meta.url).href;
-
 interface ListResponse<T> {
   items: T[];
+}
+
+interface BlogPost {
+  id?: string;
+  slug: string;
+  fileSlug: string;
+  projectSlug: string;
+  projectTitle: string;
+  projectDescription: string;
+  title: string;
+  date: string;
+  summary: string;
+  tags: string[];
+  category: string;
+  readingTime: string;
+  order?: number;
+  body: string;
+}
+
+interface BlogProject {
+  slug: string;
+  title: string;
+  description: string;
+  coverImageUrl?: string | null;
+  projectIcon?: string | null;
+  posts: BlogPost[];
 }
 
 interface PublishedProjectRecord {
@@ -24,6 +46,7 @@ interface PublishedProjectRecord {
   title: string;
   summary: string;
   descriptionMarkdown: string;
+  coverImageUrl?: string | null;
   projectIcon?: string | null;
 }
 
@@ -56,6 +79,18 @@ const toDateString = (value?: string | null) => {
   if (Number.isNaN(parsed.getTime())) return value.slice(0, 10);
 
   return parsed.toISOString().slice(0, 10);
+};
+
+const formatPostDate = (date: string) => {
+  const parsed = new Date(`${date}T00:00:00`);
+
+  if (Number.isNaN(parsed.getTime())) return date;
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(parsed);
 };
 
 const comparePosts = (first: BlogPost, second: BlogPost) => {
@@ -118,7 +153,8 @@ const buildBlogProjects = (posts: BlogPost[], publishedProjects: PublishedProjec
     projects.set(project.slug, {
       slug: project.slug,
       title: project.title,
-      description: project.summary || projectDescriptions.get(project.slug) || '',
+      description: project.summary || '',
+      coverImageUrl: project.coverImageUrl ?? null,
       projectIcon: project.projectIcon ?? null,
       posts: [],
     });
@@ -129,6 +165,7 @@ const buildBlogProjects = (posts: BlogPost[], publishedProjects: PublishedProjec
       slug: post.projectSlug,
       title: post.projectTitle,
       description: post.projectDescription,
+      coverImageUrl: undefined,
       projectIcon: undefined,
       posts: [],
     };
@@ -147,10 +184,6 @@ const buildBlogProjects = (posts: BlogPost[], publishedProjects: PublishedProjec
   ));
 };
 
-const projectDescriptions = new Map(
-  localBlogProjects.map((project) => [project.slug, project.description])
-);
-
 const toBlogPostFromRecord = (
   post: PublishedBlogPostRecord,
   projectsBySlug: Map<string, PublishedProjectRecord>
@@ -164,7 +197,7 @@ const toBlogPostFromRecord = (
     fileSlug: post.slug,
     projectSlug: post.projectSlug,
     projectTitle: project?.title || post.projectTitle,
-    projectDescription: project?.summary || projectDescriptions.get(post.projectSlug) || '',
+    projectDescription: project?.summary || '',
     title: post.title,
     date: toDateString(post.publishedAt || post.updatedAt || post.createdAt),
     summary: post.summary,
@@ -238,7 +271,10 @@ const Blog = () => {
   const activePost = allBlogPosts.find((post) => {
     if (!activePostSlug) return false;
 
-    const matchesSlug = post.slug === activePostSlug || post.fileSlug === activePostSlug;
+    const projectScopedFileSlug = `${post.projectSlug}/${post.fileSlug}`;
+    const matchesSlug = post.slug === activePostSlug
+      || post.fileSlug === activePostSlug
+      || projectScopedFileSlug === activePostSlug;
     if (!matchesSlug) return false;
 
     return activeProjectSlug ? post.projectSlug === activeProjectSlug : true;
@@ -250,6 +286,10 @@ const Blog = () => {
     && Boolean(activePostSlug || activeProjectSlug)
     && !activePost
     && !activeProject;
+  const isLoadingProjectFolders = isLoadingPublishedContent
+    && !activePostSlug
+    && !activeProjectSlug
+    && allBlogProjects.length === 0;
 
   const showProjects = () => {
     setSearchParams({});
@@ -262,7 +302,7 @@ const Blog = () => {
   };
 
   const showPost = (post: BlogPost) => {
-    setSearchParams({ project: post.projectSlug, post: post.slug });
+    setSearchParams({ project: post.projectSlug, post: post.fileSlug });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -492,15 +532,27 @@ const Blog = () => {
                 </div>
               )}
 
-              {allBlogProjects.length > 0 ? (
+              {isLoadingProjectFolders ? (
+                <section className="grid gap-5 md:grid-cols-2">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={`blog-project-skeleton-${index}`} className="min-h-[220px] animate-pulse rounded-[22px] border border-slate-100 bg-white p-6 shadow-[0_14px_44px_-24px_rgba(15,23,42,0.35)]">
+                      <div className="mb-6 h-12 w-12 rounded-xl bg-slate-100" />
+                      <div className="h-7 w-2/3 rounded-full bg-slate-100" />
+                      <div className="mt-4 space-y-2">
+                        <div className="h-4 w-full rounded-full bg-slate-100" />
+                        <div className="h-4 w-4/5 rounded-full bg-slate-100" />
+                      </div>
+                      <div className="mt-8 border-t border-slate-100 pt-5">
+                        <div className="h-4 w-28 rounded-full bg-slate-100" />
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              ) : allBlogProjects.length > 0 ? (
                 <section className="grid gap-5 md:grid-cols-2">
                   {allBlogProjects.map((project) => {
                     const latestPost = getLatestPost(project.posts);
-                    const projectLogo = !project.projectIcon && project.slug === 'momozhi'
-                      ? momoLogoImage
-                      : !project.projectIcon && project.slug === 'mmcsa'
-                        ? mmcsaLogoImage
-                        : undefined;
+                    const projectLogo = project.coverImageUrl?.trim();
 
                     return (
                       <button
@@ -512,7 +564,7 @@ const Blog = () => {
                         <div className="mb-6 flex items-start justify-between gap-4">
                           <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-[#FFFF00] text-black shadow-md shadow-[#FFFF00]/20 transition group-hover:rotate-3">
                             {projectLogo ? (
-                              <img src={projectLogo} alt={`${project.title} logo`} className="h-full w-full object-cover" />
+                              <img src={projectLogo} alt={`${project.title} logo`} className="h-full w-full object-contain p-1" />
                             ) : (
                               <ProjectIconGlyph value={project.projectIcon} className="h-6 w-6" />
                             )}

@@ -43,17 +43,20 @@ public class GalleryPhotoService {
 
   private final GalleryPhotoRepository galleryPhotos;
   private final HomeGallerySlotRepository homeGallerySlots;
+  private final GalleryImageDerivativeService imageDerivatives;
   private final Path galleryDirectory;
   private final String publicPath;
 
   public GalleryPhotoService(
     GalleryPhotoRepository galleryPhotos,
     HomeGallerySlotRepository homeGallerySlots,
+    GalleryImageDerivativeService imageDerivatives,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
     this.galleryPhotos = galleryPhotos;
     this.homeGallerySlots = homeGallerySlots;
+    this.imageDerivatives = imageDerivatives;
     this.galleryDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("gallery").normalize();
     this.publicPath = normalizePublicPath(publicPath);
   }
@@ -100,11 +103,14 @@ public class GalleryPhotoService {
         Files.copy(input, destination);
       }
 
+      var derivatives = imageDerivatives.createDerivatives(destination, galleryDirectory, fileName);
       var photo = new GalleryPhoto();
       photo.setFileName(fileName);
       photo.setMimeType(mimeType);
       photo.setSizeBytes(file.getSize());
       photo.setUrl(toPublicUrl(fileName));
+      photo.setThumbnailUrl(toPublicUrl(derivatives.thumbnailFileName()));
+      photo.setMediumUrl(toPublicUrl(derivatives.mediumFileName()));
       apply(photo, request, true);
 
       return GalleryPhotoResponse.from(galleryPhotos.save(photo));
@@ -129,6 +135,8 @@ public class GalleryPhotoService {
 
     homeGallerySlots.findAllByGalleryPhoto(photo).forEach((slot) -> slot.setGalleryPhoto(null));
     deleteFile(photo.getFileName());
+    deleteDerivativeFile(photo.getFileName(), "thumbnail");
+    deleteDerivativeFile(photo.getFileName(), "medium");
     galleryPhotos.delete(photo);
   }
 
@@ -169,6 +177,13 @@ public class GalleryPhotoService {
       Files.deleteIfExists(target);
     } catch (IOException error) {
       throw new BadRequestException("Image delete failed.");
+    }
+  }
+
+  private void deleteDerivativeFile(String fileName, String variant) {
+    var derivativeFileName = GalleryImageDerivativeService.derivativeFileName(fileName, variant);
+    if (!derivativeFileName.equals(fileName)) {
+      deleteFile(derivativeFileName);
     }
   }
 

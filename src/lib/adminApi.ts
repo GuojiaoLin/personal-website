@@ -116,6 +116,8 @@ export interface GalleryPhotoRecord {
   sortOrder: number;
   status: ContentStatus;
   url: string;
+  thumbnailUrl?: string | null;
+  mediumUrl?: string | null;
   fileName: string;
   mimeType: string;
   sizeBytes: number;

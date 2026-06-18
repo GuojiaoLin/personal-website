@@ -154,6 +154,7 @@ const renderImageBlock = (
     <img
       src={src}
       alt={alt}
+      loading="lazy"
       className={imageClassName}
       style={style}
     />
@@ -165,6 +166,7 @@ const renderImageBlock = (
         key={key}
         src={src}
         alt={alt}
+        loading="lazy"
         className={imageClassName}
         style={style}
       />

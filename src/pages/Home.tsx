@@ -9,10 +9,13 @@ import { Link } from 'react-router-dom';
 import { listHomeGallerySlots, type HomeGallerySlotKey, type HomeGallerySlotRecord } from '../lib/adminApi';
 import { requestJson } from '../lib/siteApi';
 
-const lifeLensImage = new URL('../../docs/images/微信图片_20260509190424.jpg', import.meta.url).href;
-const resumeSceneImage = new URL('../../docs/images/微信图片_20260529165600.jpg', import.meta.url).href;
-const resumeCardImage = new URL('../../docs/images/微信图片_20260608142513_56_360.jpg', import.meta.url).href;
-const catPortraitImage = new URL('../../docs/images/图册/微信图片_20260529170441.jpg', import.meta.url).href;
+const STATIC_IMAGE_VERSION = '20260616-image-optimization';
+const versionStaticImage = (url: string) => `${url}?v=${STATIC_IMAGE_VERSION}`;
+
+const lifeLensImage = versionStaticImage(new URL('../../docs/images/微信图片_20260509190424.jpg', import.meta.url).href);
+const resumeSceneImage = versionStaticImage(new URL('../../docs/images/微信图片_20260529165600.jpg', import.meta.url).href);
+const resumeCardImage = versionStaticImage(new URL('../../docs/images/微信图片_20260608142513_56_360.jpg', import.meta.url).href);
+const catPortraitImage = versionStaticImage(new URL('../../docs/images/图册/微信图片_20260529170441.jpg', import.meta.url).href);
 const defaultHomeSlotImages: Record<HomeGallerySlotKey, string> = {
   'hero-polaroid': resumeSceneImage,
   'resume-card': resumeCardImage,
@@ -67,7 +70,7 @@ const Home = () => {
 
         setHomeSlotImages(slots.reduce<Partial<Record<HomeGallerySlotKey, string>>>((images, slot: HomeGallerySlotRecord) => {
           if (slot.photo?.url) {
-            images[slot.slotKey] = slot.photo.url;
+            images[slot.slotKey] = slot.photo.mediumUrl || slot.photo.url;
           }
 
           return images;
@@ -274,6 +277,7 @@ const Home = () => {
               <img
                 src={getHomeSlotImage('resume-card')}
                 alt="展柜前生活照"
+                loading="lazy"
                 className="w-full aspect-[16/9] object-cover object-[58%_46%] transition-transform duration-500 group-hover:scale-[1.02]"
               />
             </div>
@@ -343,6 +347,7 @@ const Home = () => {
               <img
                 src={getHomeSlotImage('life-card')}
                 alt="小动物相伴的生活摄影"
+                loading="lazy"
                 className="rounded-3xl w-full aspect-[16/9] object-cover shadow-md ring-2 ring-slate-100 hover:scale-[1.02] transition-transform"
               />
             </div>
@@ -398,6 +403,7 @@ const Home = () => {
                           <img
                             src={post.coverImageUrl}
                             alt={post.title}
+                            loading="lazy"
                             className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                           />
                         ) : (
@@ -538,6 +544,7 @@ const Home = () => {
               <img
                 src={getHomeSlotImage('about-portrait')}
                 alt="我和小猫合影"
+                loading="lazy"
                 className="aspect-[1.08/1] w-full rounded-[32px] border-[5px] border-white object-cover object-center shadow-[0_18px_36px_rgba(15,23,42,0.13)]"
               />
               <div className="absolute -bottom-4 -left-5 flex h-14 w-14 items-center justify-center rounded-full border-[6px] border-white bg-white shadow-[0_14px_28px_rgba(15,23,42,0.12)]">

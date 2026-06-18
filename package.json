@@ -6,6 +6,7 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
+    "dev:all": "node scripts/dev-all.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
@@ -49,7 +50,7 @@
     "clsx": "^2.1.1",
     "express": "^5.2.1",
     "framer-motion": "^12.38.0",
-    "lucide-react": "^1.6.0",
+    "lucide-react": "1.6.0",
     "mermaid": "^11.15.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -66,8 +67,10 @@
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
     "react-is": "^18.3.1",
+    "sharp": "^0.35.1",
     "tailwindcss": "^3.4.19",
     "typescript": "^6.0.2",
-    "vite": "^8.0.2"
+    "vite": "^8.0.2",
+    "vite-plugin-image-optimizer": "^2.0.3"
   }
 }

@@ -35,6 +35,12 @@ public class GalleryPhoto extends AuditedEntity {
   private String url;
 
   @Column(nullable = false)
+  private String thumbnailUrl = "";
+
+  @Column(nullable = false)
+  private String mediumUrl = "";
+
+  @Column(nullable = false)
   private String fileName;
 
   @Column(nullable = false)
@@ -97,6 +103,22 @@ public class GalleryPhoto extends AuditedEntity {
 
   public void setUrl(String url) {
     this.url = url;
+  }
+
+  public String getThumbnailUrl() {
+    return thumbnailUrl;
+  }
+
+  public void setThumbnailUrl(String thumbnailUrl) {
+    this.thumbnailUrl = thumbnailUrl;
+  }
+
+  public String getMediumUrl() {
+    return mediumUrl;
+  }
+
+  public void setMediumUrl(String mediumUrl) {
+    this.mediumUrl = mediumUrl;
   }
 
   public String getFileName() {

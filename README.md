@@ -2,7 +2,7 @@
 
 一个前后端分离的全栈个人网站，兼具作品展示与内容管理功能。已上线运行于 [mimolin.space](https://mimolin.space)。
 
-> 系统从设计、开发、部署到运维由一人独立完成，开发周期 3 周，覆盖 8 张数据表、30+ REST 接口、10 个 Flyway 迁移版本。
+> 系统从设计、开发、部署到运维由一人独立完成，开发周期 3 周，覆盖 9 张数据表、40+ REST 接口、13 个 Flyway 迁移版本。
 
 **前台** — 首页、项目经历、技术博客、摄影图册、访客留言、关于我、简历，共 7 个页面。支持 Markdown 博客渲染（含 Mermaid 图表）、瀑布流图册浏览、树形评论与留言板。
 
@@ -48,7 +48,7 @@
 | 前端 | React 18、Vite、TypeScript、React Router、Tailwind CSS、Radix UI、Lucide React |
 | 后端 | Spring Boot 3、Java 17、Spring Security、Spring Data JPA、Flyway |
 | 数据库 | PostgreSQL 16 |
-| 静态资源 | 前端 `dist` 由 Nginx 托管，上传文件通过后端 `/uploads` 暴露 |
+| 静态资源 | 前端 `dist` 由 Nginx 托管，上传文件通过后端 `/uploads` 暴露，图片上传和构建期均做尺寸/体积优化 |
 | 部署 | 腾讯云轻量应用服务器、Nginx、可选 EdgeOne 加速 |
 
 ## 目录结构
@@ -86,38 +86,63 @@ personal-website/
 - Maven 3.9 或更高版本
 - Docker Desktop，用来启动本地 PostgreSQL
 
-### 启动数据库
+### 首次准备
 
 ```bash
 cp .env.example .env
-# 编辑 .env，至少改这三个值：
-# DATABASE_PASSWORD
-# SITE_ADMIN_EMAIL
-# SITE_ADMIN_PASSWORD
-docker compose up -d
+npm install
 ```
 
-默认会启动一个 PostgreSQL：
+然后编辑根目录 `.env`，至少填写这三个值：
 
-- 数据库：`personal_website`
-- 用户名：`postgres`
-- 密码：读取根目录 `.env` 里的 `DATABASE_PASSWORD`
-- 端口：`5432`
+```env
+DATABASE_PASSWORD=replace-with-a-local-database-password
+SITE_ADMIN_EMAIL=admin@example.com
+SITE_ADMIN_PASSWORD=replace-with-a-local-admin-password
+```
 
-### 启动后端
+本地默认数据库连接是：
+
+```env
+DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/personal_website
+DATABASE_USERNAME=postgres
+```
+
+### 推荐：一键启动
+
+在项目根目录执行：
 
 ```bash
-cd backend
-mvn spring-boot:run
+npm run dev:all
 ```
 
-后端会自动读取根目录 `.env`。账号初始化和密码修改见下方「站主账号」。
+这个命令会依次做三件事：
+
+- 执行 `docker compose up -d`，启动本地 PostgreSQL。
+- 在 `backend/` 目录运行 `mvn spring-boot:run`，启动 Spring Boot 后端。
+- 在项目根目录运行 `npm run dev`，启动 Vite 前端。
+
+所以不用先手动执行 `docker compose up -d`。只要 `.env` 配好，日常开发直接跑 `npm run dev:all` 即可。
+
+前端启动后，终端会显示类似：
+
+```text
+Local: http://localhost:5173/
+```
+
+浏览器访问：
+
+```text
+http://localhost:5173/
+```
 
 ### 站主账号
 
 **首次设置：** 后端首次启动时，如果 `admin_users` 表为空，会用 `.env` 里的 `SITE_ADMIN_EMAIL` 和 `SITE_ADMIN_PASSWORD` 自动创建一个 OWNER 账号。已有管理员后，再改这两个变量不会新增账号，也不会覆盖密码。
 
 **修改密码：** 登录后台 → 右上角「修改密码」，输入当前密码和新密码即可。改完后建议从 `.env`（本地）或 `/etc/personal-website.env`（生产）中删除 `SITE_ADMIN_PASSWORD`，后续改密码统一走后台入口。
+
+### 访问地址和健康检查
 
 后端默认运行在：
 
@@ -137,25 +162,77 @@ curl http://127.0.0.1:18081/api/health
 {"ok":true}
 ```
 
-### 启动前端
+按 `Ctrl+C` 可以停止前后端进程。数据库容器会继续留在后台，下一次 `npm run dev:all` 会复用它。
 
-回到项目根目录：
+### 手动分开启动（可选）
+
+如果想分开看日志，也可以开三个终端手动启动。
+
+终端 1：启动数据库。
 
 ```bash
-npm install
+docker compose up -d
+```
+
+终端 2：启动后端。
+
+```bash
+cd backend
+mvn spring-boot:run
+```
+
+终端 3：启动前端。
+
+```bash
 npm run dev
 ```
 
-前端默认运行在：
+### 本地启动常见问题
 
-```text
-http://127.0.0.1:5173
+#### 后台接口请求失败
+
+如果页面能打开，但出现类似“后台博客暂时加载失败”，先看终端里后端是否启动成功。
+
+如果 Vite 日志里出现：
+
+```bash
+connect ECONNREFUSED 127.0.0.1:18081
 ```
 
-本地开发时，Vite 会把 `/api` 和 `/uploads` 代理到 `http://127.0.0.1:18081`。如果后端端口不一样，可以设置：
+说明前端已经启动，但后端还没准备好，或者后端启动失败。继续往后看 Spring Boot 日志。
+
+#### PostgreSQL 密码不匹配
+
+如果后端日志里出现：
+
+```text
+FATAL: password authentication failed for user "postgres"
+```
+
+说明当前 Docker 里的 PostgreSQL 数据卷是用旧密码初始化的，而 `.env` 里的 `DATABASE_PASSWORD` 已经变了。
+
+如果本地开发数据可以清空，执行一次：
+
+```bash
+docker compose down -v
+npm run dev:all
+```
+
+`docker compose down -v` 会删除本地 PostgreSQL 数据卷，数据库会按当前 `.env` 重新初始化。不要把这个命令写进日常启动脚本，否则每次启动都会清空本地数据。
+
+#### 后端端口不是 `18081`
+
+本地开发时，Vite 会把 `/api` 和 `/uploads` 代理到 `http://127.0.0.1:18081`。如果后端端口改了，可以设置：
 
 ```bash
 export VITE_BACKEND_PROXY_TARGET="http://127.0.0.1:18081"
+npm run dev
+```
+
+Windows PowerShell 写法：
+
+```powershell
+$env:VITE_BACKEND_PROXY_TARGET="http://127.0.0.1:18081"
 npm run dev
 ```
 

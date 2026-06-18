@@ -3,7 +3,7 @@ title: 内容建模与 REST API 设计：项目、博客、状态机和那一列
 date: 2026-06-14
 project: 个人网站（全栈）
 projectSlug: personal-website
-summary: 这篇讲后端怎么把「项目」和「博客」建模成实体、怎么用状态机控制草稿与发布、为什么把 techStack 存成一列 JSON、公开接口和管理接口怎么分、以及用 Flyway 把表结构当代码管。最后用集成测试钉死几个容易出错的契约，比如 slug 在不同项目下可以重复。
+summary: 这篇讲后端怎么把「项目」和「博客」建模成实体，怎么扩展到图册、首页图片槽位、简历和 About 内容，怎么用状态机控制草稿与发布，为什么把部分结构化内容存成 JSON 文本，以及用 Flyway 把表结构当代码管。最后用集成测试钉死几个容易出错的契约，比如 slug 在不同项目下可以重复。
 tags: [JPA, REST, 数据建模, Flyway, 状态机]
 category: 后端建模
 order: 4
@@ -18,6 +18,7 @@ erDiagram
   PROJECT ||--o{ BLOG_POST : "1 对多"
   BLOG_POST ||--o{ MEDIA_ASSET : "配图"
   BLOG_POST ||--o{ COMMENT : "评论(BLOG 类型)"
+  GALLERY_PHOTO ||--o{ HOME_GALLERY_SLOT : "可被首页引用"
 
   PROJECT {
     uuid id PK
@@ -36,6 +37,41 @@ erDiagram
     bool featuredOnHome
     enum status
     instant publishedAt
+  }
+  MEDIA_ASSET {
+    uuid id PK
+    uuid blog_post_id FK
+    string url
+    string mimeType
+    long sizeBytes
+  }
+  GALLERY_PHOTO {
+    uuid id PK
+    string url
+    string thumbnailUrl
+    string mediumUrl
+    enum status
+    int sortOrder
+  }
+  HOME_GALLERY_SLOT {
+    uuid id PK
+    string slotKey UK
+    uuid gallery_photo_id FK
+    string uploadedImageUrl
+  }
+  RESUME_VERSION {
+    uuid id PK
+    string label
+    string url
+    bool active
+  }
+  ABOUT_CONTENT {
+    uuid id PK
+    string contentKey UK
+    string profileDetails "JSON 字符串"
+    string resumeEntries "JSON 字符串"
+    string contactItems "JSON 字符串"
+    string socialLinks "JSON 字符串"
   }
 ```
 
@@ -185,14 +221,34 @@ public List<BlogPostResponse> listHomeFeatured() {
 
 集成测试 `homeFeaturedBlogPostsAreManagedFromAdminFields` 验证了一串边界：精选最多 3 篇、按 `homeOrder` 升序、`hidden` 的不算、没标精选的不算。把这些展示规则用字段 + 查询表达，而不是散落在前端，是「后端定义内容规则」的体现。
 
-## 8. 数据库迁移：表结构是代码，由 Flyway 管
+## 8. 内容域扩展：图册、简历、About 和首页槽位
 
-前面 [第 1 章](01-全栈架构与技术选型.md)提过 `ddl-auto: validate`——Hibernate 不许碰表结构。表结构的唯一事实来源是 `db/migration/` 下的 Flyway 脚本，按 `V1 / V2 / V3 / V4` 版本顺序执行：
+项目后面不只管理博客，还加了几类更偏「个人网站运营」的内容：
+
+- [GalleryPhoto](../../backend/src/main/java/com/guojiaolin/website/gallery/GalleryPhoto.java)：摄影作品，有标题、描述、地点、拍摄时间、排序、状态，以及原图 / 缩略图 / 中图三个 URL；
+- [HomeGallerySlot](../../backend/src/main/java/com/guojiaolin/website/home/HomeGallerySlot.java)：首页图片槽位，用唯一的 `slotKey` 定位某个坑位；它既可以引用一张已发布的图册照片，也可以单独上传一张图片作为覆盖图；
+- [ResumeVersion](../../backend/src/main/java/com/guojiaolin/website/resume/ResumeVersion.java)：简历版本，保存文件 URL、文件名、MIME、大小和是否 active，保证站点只暴露当前启用版本；
+- [AboutContent](../../backend/src/main/java/com/guojiaolin/website/about/AboutContent.java)：关于我页面的结构化内容，`profileDetails`、`resumeEntries`、`contactItems`、`socialLinks` 这些字段以 JSON 文本存储。
+
+这里能看到一个设计原则：不是所有内容都值得拆成很多表。像 `GalleryPhoto` 和 `HomeGallerySlot` 有明确关系和查询需求，所以建表建外键；而 About 页里的履历条目、联系方式、社交链接更像一整块页面配置，后台整体读写，存 JSON 文本反而更直接。和 `Project.techStack` 一样，这是按访问模式做的取舍。
+
+## 9. 数据库迁移：表结构是代码，由 Flyway 管
+
+前面 [第 1 章](01-全栈架构与技术选型.md)提过 `ddl-auto: validate`——Hibernate 不许碰表结构。表结构的唯一事实来源是 `db/migration/` 下的 Flyway 脚本，目前已经从 `V1` 演进到 `V13`：
 
 - `V1` 建表（admin_users / projects / blog_posts / comments / media_assets）和索引；
 - `V2` 把已有项目数据种进去；
 - `V3` 把已有博客种进去；
-- `V4` 把 media_assets 收紧到「属于某篇博客」。
+- `V4` 把 media_assets 收紧到「属于某篇博客」；
+- `V5` 给博客加首页精选字段；
+- `V6` 把博客 slug 的唯一性收紧到项目维度；
+- `V7` 给项目加图标字段；
+- `V8` 增加简历版本表；
+- `V9` 增加图册照片表；
+- `V10` 增加 About 页面内容表；
+- `V11` 增加首页图册槽位表；
+- `V12` 给首页槽位增加直接上传图片的兜底字段；
+- `V13` 给图册照片增加 `thumbnail_url` 和 `medium_url`，用于保存缩略图和中图派生资源。
 
 好处是表结构变更**可追溯、可重放、和代码一起进版本库**。`V1` 里也能看到不少建模意识：状态字段用 `check` 约束兜底（`status in ('DRAFT','PUBLISHED','HIDDEN')`）、为高频查询建了复合索引：
 
@@ -202,15 +258,15 @@ create index blog_posts_status_order_idx on blog_posts (status, blog_order asc, 
 
 这个索引的列顺序正好对应公开列表的查询模式（按 status 过滤 + 按 blog_order/published_at 排序），不是随手建的。
 
-## 9. 面试口述版
+## 10. 面试口述版
 
 > 内容这块的领域模型是「项目 1 对多博客」，博客通过外键挂项目，删项目级联删博客。所有实体继承一个审计基类，统一用 UUID 主键、自动维护创建/更新时间。
 >
 > 内容有个 DRAFT/PUBLISHED/HIDDEN 状态机，把写作和发布分离：公开接口的查询都带 `status = PUBLISHED` 条件，后台接口才查全部。技术栈标签我存成一列 JSON 而不是关联表，因为它只跟着项目整体读写、没有按标签检索的需求——有这个需求我才会拆表。
 >
-> 接口入参出参都用独立 DTO：入参带 Bean Validation，slug 用正则强制 kebab-case，校验在 `@Valid` 阶段完成；出参把关联项目的字段拍扁，省前端一次请求。有个容易错的契约是 slug 项目内唯一而非全局唯一，更新查重时要排除自己，这条我用集成测试钉住了。表结构全部由 Flyway 版本化管理，Hibernate 只做 validate 不改表。
+> 接口入参出参都用独立 DTO：入参带 Bean Validation，slug 用正则强制 kebab-case，校验在 `@Valid` 阶段完成；出参把关联项目的字段拍扁，省前端一次请求。有个容易错的契约是 slug 项目内唯一而非全局唯一，更新查重时要排除自己，这条我用集成测试钉住了。后来图册、首页图片槽位、简历版本和 About 内容也都进了同一套建模和迁移体系。表结构全部由 Flyway 版本化管理，Hibernate 只做 validate 不改表。
 
-## 10. 面试官可能追问的问题
+## 11. 面试官可能追问的问题
 
 **Q1：techStack 为什么存 JSON 不建关联表？这不是反范式吗？**
 是反范式，但是有意识的。判断标准是访问模式：`techStack` 在这个系统里只跟着项目整体读写，从没有「按某个标签筛项目」的需求。这种情况下一列 JSON 一次就读全、省一次 join，更简单。代价是数据库层没法高效地按单个标签查。一旦出现按标签检索的需求，正确做法就是拆成关联表。反范式不是错，脱离访问模式谈范式才是。
