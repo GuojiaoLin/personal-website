@@ -52,6 +52,25 @@ class ProjectLogoImageServiceTest {
     logo.flush();
   }
 
+  @Test
+  void preservesInteriorLogoArtworkWhenReplacingWhiteCanvas() throws Exception {
+    var sourceImagePath = Path.of("..", "design", "logo - \u526f\u672c.png");
+    var source = uploadDirectory.resolve("customer-service-logo.png");
+    Files.copy(sourceImagePath, source, StandardCopyOption.REPLACE_EXISTING);
+
+    var processed = service.process(source, uploadDirectory, "customer-service-logo.png", "image/png");
+
+    var original = ImageIO.read(sourceImagePath.toFile());
+    var logo = ImageIO.read(uploadDirectory.resolve(processed.fileName()).toFile());
+    assertThat(rgbAt(logo, 0, 0)).isEqualTo(0xffff00);
+    assertThat(rgbAt(logo, 100, 100)).isEqualTo(0xffff00);
+    assertThat(rgbAt(logo, 390, 620)).isEqualTo(rgbAt(original, 390, 620));
+    assertThat(rgbAt(logo, 627, 520)).isEqualTo(rgbAt(original, 627, 520));
+    assertThat(rgbAt(logo, 900, 620)).isEqualTo(rgbAt(original, 900, 620));
+    original.flush();
+    logo.flush();
+  }
+
   private BufferedImage createLogoWithBackground() {
     var image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
     for (var y = 0; y < image.getHeight(); y += 1) {

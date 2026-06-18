@@ -56,6 +56,11 @@ public class GalleryPhotoController {
     return galleryPhotos.update(id, request);
   }
 
+  @PostMapping(value = "/api/admin/gallery-photos/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public GalleryPhotoResponse replaceImage(@PathVariable UUID id, @RequestParam("file") MultipartFile file) {
+    return galleryPhotos.replaceImage(id, file);
+  }
+
   @DeleteMapping("/api/admin/gallery-photos/{id}")
   public ResponseEntity<Void> delete(@PathVariable UUID id) {
     galleryPhotos.delete(id);

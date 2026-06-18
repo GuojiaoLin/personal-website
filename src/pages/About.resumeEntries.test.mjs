@@ -21,3 +21,9 @@ assert.match(
   /orderedResumeEntries\.length > 0 && \(/,
   'About page should render the resume section only when backend content has resume entries.',
 );
+
+assert.match(
+  source,
+  /\[...aboutContent\.resumeEntries\]\s*\.filter\(\(entry\) => !entry\.hidden\)/,
+  'About page should not render resume entries marked hidden.',
+);

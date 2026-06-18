@@ -293,6 +293,13 @@ export const updateGalleryPhoto = (id: string, payload: GalleryPhotoPayload) => 
   })
 );
 
+export const replaceGalleryPhotoImage = async (id: string, file: File) => {
+  const body = new FormData();
+  body.append('file', file);
+  const response = await uploadFetch(`/api/admin/gallery-photos/${id}/image`, body, '图册图片更换失败，请稍后再试。');
+  return response.json() as Promise<GalleryPhotoRecord>;
+};
+
 export const deleteGalleryPhoto = (id: string) => requestJson<void>(`/api/admin/gallery-photos/${id}`, {
   method: 'DELETE',
 });

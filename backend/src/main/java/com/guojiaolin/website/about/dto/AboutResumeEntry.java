@@ -14,6 +14,7 @@ public record AboutResumeEntry(
   String description,
   String highlightsLabel,
   @Valid List<AboutResumeHighlight> highlights,
-  Integer sortOrder
+  Integer sortOrder,
+  Boolean hidden
 ) {
 }

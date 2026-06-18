@@ -98,6 +98,42 @@ class ContentApiIntegrationTest {
   }
 
   @Test
+  void publicBlogPostsExcludePostsFromHiddenProjects() throws Exception {
+    var session = login();
+    var visibleProjectSlug = "visible-blog-project-" + System.nanoTime();
+    var hiddenProjectSlug = "hidden-blog-project-" + System.nanoTime();
+    var visiblePostSlug = "visible-post-" + System.nanoTime();
+    var hiddenPostSlug = "hidden-post-" + System.nanoTime();
+    var visibleProjectId = createProject(session, visibleProjectSlug, "published");
+    var hiddenProjectId = createProject(session, hiddenProjectSlug, "hidden");
+
+    createBlogPost(session, visibleProjectId, visiblePostSlug, "Visible post", "published", false, 1);
+    createBlogPost(session, hiddenProjectId, hiddenPostSlug, "Hidden post", "published", true, -100);
+
+    var publicPosts = mockMvc.perform(get("/api/blog-posts"))
+      .andExpect(status().isOk())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    assertThat(publicPosts).contains(visiblePostSlug).doesNotContain(hiddenPostSlug);
+
+    var homeFeaturedPosts = mockMvc.perform(get("/api/blog-posts/home-featured"))
+      .andExpect(status().isOk())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    assertThat(homeFeaturedPosts).doesNotContain(hiddenPostSlug);
+
+    mockMvc.perform(get("/api/blog-posts/%s".formatted(hiddenPostSlug)))
+      .andExpect(status().isNotFound());
+
+    mockMvc.perform(get("/api/projects/%s/blog-posts/%s".formatted(hiddenProjectSlug, hiddenPostSlug)))
+      .andExpect(status().isNotFound());
+  }
+
+  @Test
   void ownerCanUploadAndListMediaAssets() throws Exception {
     var session = login();
     var projectId = createPublishedProject(session, "media-project-" + System.nanoTime());
@@ -267,6 +303,55 @@ class ContentApiIntegrationTest {
   }
 
   @Test
+  void ownerCanReplaceGalleryPhotoImageWithoutChangingText() throws Exception {
+    var session = login();
+    var originalFileName = "gallery-original-%d.png".formatted(System.nanoTime());
+    var replacementFileName = "gallery-replacement-%d.png".formatted(System.nanoTime());
+
+    var createResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(new MockMultipartFile("file", originalFileName, "image/png", createPngBytes(32, 24)))
+        .param("title", "Keep title")
+        .param("description", "Keep description")
+        .param("location", "Keep location")
+        .param("takenAt", "2024")
+        .param("sortOrder", "12")
+        .param("status", "published")
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var photoId = JsonField.extract(createResponse, "id");
+    var originalPath = resolveUploadPath(JsonField.extract(createResponse, "url"));
+    assertThat(Files.exists(originalPath)).isTrue();
+
+    var replaceResponse = mockMvc.perform(multipart("/api/admin/gallery-photos/%s/image".formatted(photoId))
+        .file(new MockMultipartFile("file", replacementFileName, "image/png", createPngBytes(48, 36)))
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.fileName").value(replacementFileName))
+      .andExpect(jsonPath("$.url").value("/uploads/gallery/" + replacementFileName))
+      .andExpect(jsonPath("$.title").value("Keep title"))
+      .andExpect(jsonPath("$.description").value("Keep description"))
+      .andExpect(jsonPath("$.location").value("Keep location"))
+      .andExpect(jsonPath("$.takenAt").value("2024"))
+      .andExpect(jsonPath("$.sortOrder").value(12))
+      .andExpect(jsonPath("$.status").value("published"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    assertThat(Files.exists(originalPath)).isFalse();
+    assertThat(Files.exists(resolveUploadPath(JsonField.extract(replaceResponse, "url")))).isTrue();
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(photoId)).with(csrf()).session(session))
+      .andExpect(status().isNoContent());
+  }
+
+  @Test
   void galleryUploadsAssignIncrementingSortOrderWhenSortOrderIsOmitted() throws Exception {
     var session = login();
     var firstFileName = "auto sort first %d.png".formatted(System.nanoTime());
@@ -342,6 +427,39 @@ class ContentApiIntegrationTest {
     assertImageLongestSideAtMost(mediumPath, 1600);
     assertThat(Files.size(thumbnailPath)).isLessThan(Files.size(originalPath));
     assertThat(Files.size(mediumPath)).isLessThan(Files.size(originalPath));
+
+    mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(photoId)).with(csrf()).session(session))
+      .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void galleryUploadAppliesExifOrientationToStoredOriginalImage() throws Exception {
+    var session = login();
+    var fileName = "oriented-gallery-%d.jpg".formatted(System.nanoTime());
+    var image = new MockMultipartFile(
+      "file",
+      fileName,
+      "image/jpeg",
+      createJpegWithExifOrientation(1200, 800, 6)
+    );
+
+    var createResponse = mockMvc.perform(multipart("/api/admin/gallery-photos")
+        .file(image)
+        .param("title", "Oriented gallery photo")
+        .param("description", "Stored original should not appear sideways")
+        .param("status", "published")
+        .with(csrf())
+        .session(session))
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.fileName").value(fileName))
+      .andExpect(jsonPath("$.mimeType").value("image/jpeg"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    var photoId = JsonField.extract(createResponse, "id");
+    var originalPath = resolveUploadPath(JsonField.extract(createResponse, "url"));
+    assertImageIsPortrait(originalPath);
 
     mockMvc.perform(delete("/api/admin/gallery-photos/%s".formatted(photoId)).with(csrf()).session(session))
       .andExpect(status().isNoContent());
@@ -542,7 +660,21 @@ class ContentApiIntegrationTest {
                     "detail": "支持新增、编辑、删除项目简历条目。"
                   }
                 ],
-                "sortOrder": 1
+                "sortOrder": 1,
+                "hidden": false
+              },
+              {
+                "category": "Project Resume",
+                "title": "Hidden resume entry",
+                "meta": "Private draft",
+                "period": "2026",
+                "techStack": ["Draft"],
+                "descriptionLabel": "Project description",
+                "description": "This entry should stay hidden publicly.",
+                "highlightsLabel": "Highlights",
+                "highlights": [],
+                "sortOrder": 2,
+                "hidden": true
               }
             ],
             "contactHeading": "连接我的世界",
@@ -564,13 +696,17 @@ class ContentApiIntegrationTest {
           """))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.profileDetails", hasSize(2)))
-      .andExpect(jsonPath("$.resumeEntries", hasSize(1)))
-      .andExpect(jsonPath("$.resumeEntries[0].title").value("可编辑项目简历"));
+      .andExpect(jsonPath("$.resumeEntries", hasSize(2)))
+      .andExpect(jsonPath("$.resumeEntries[0].title").value("可编辑项目简历"))
+      .andExpect(jsonPath("$.resumeEntries[0].hidden").value(false))
+      .andExpect(jsonPath("$.resumeEntries[1].title").value("Hidden resume entry"))
+      .andExpect(jsonPath("$.resumeEntries[1].hidden").value(true));
 
     mockMvc.perform(get("/api/about"))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.portraitImageUrl").value("/assets/profile.jpg"))
       .andExpect(jsonPath("$.profileDetails[1].copyValue").value("you@example.com"))
+      .andExpect(jsonPath("$.resumeEntries", hasSize(1)))
       .andExpect(jsonPath("$.resumeEntries[0].description").value("这段内容来自后台。"))
       .andExpect(jsonPath("$.contactItems", hasSize(1)));
   }
@@ -896,6 +1032,10 @@ class ContentApiIntegrationTest {
   }
 
   private String createPublishedProject(MockHttpSession session, String slug) throws Exception {
+    return createProject(session, slug, "published");
+  }
+
+  private String createProject(MockHttpSession session, String slug, String projectStatus) throws Exception {
     var response = mockMvc.perform(post("/api/admin/projects")
         .session(session)
         .with(csrf())
@@ -907,9 +1047,9 @@ class ContentApiIntegrationTest {
             "summary": "Summary",
             "descriptionMarkdown": "Body",
             "techStack": ["React"],
-            "status": "published"
+            "status": "%s"
           }
-          """.formatted(slug)))
+          """.formatted(slug, projectStatus)))
       .andExpect(status().isCreated())
       .andReturn()
       .getResponse()

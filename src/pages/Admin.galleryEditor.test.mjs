@@ -18,6 +18,64 @@ for (const forbidden of [
 }
 
 assert.match(source, /saveGalleryPhoto\('published'\)/);
+
+assert.match(
+  source,
+  /const galleryVisibilityTargetStatus = galleryForm\.status === 'hidden' \? 'published' : 'hidden';/,
+  'Gallery visibility action should publish hidden photos and hide visible photos.',
+);
+
+assert.match(
+  source,
+  /const galleryVisibilityButtonLabel = galleryForm\.status === 'hidden' \? '显示图片' : '隐藏图片';/,
+  'Gallery visibility button should read 显示图片 when the current photo is hidden.',
+);
+
+assert.match(
+  source,
+  /status === 'hidden'\s*\?\s*'图册图片已隐藏，前台不会展示。'/,
+  'Gallery save notice should explain that hidden photos are not shown publicly.',
+);
+
+const galleryEditorActionMatch = source.match(
+  /<p className="text-xs font-black uppercase tracking-widest text-slate-400">Gallery Photos<\/p>[\s\S]*?onClick=\{\(\) => void deleteCurrentGalleryPhoto\(\)\}/,
+);
+
+assert.ok(galleryEditorActionMatch, 'Gallery editor action block should exist.');
+
+const galleryEditorActionBlock = galleryEditorActionMatch[0];
+
+assert.match(galleryEditorActionBlock, /<EyeOff className="h-4 w-4" \/>/);
+assert.match(galleryEditorActionBlock, /\{galleryVisibilityButtonLabel\}/);
+assert.match(
+  galleryEditorActionBlock,
+  /onClick=\{\(\) => void saveGalleryPhoto\(galleryVisibilityTargetStatus\)\}/,
+);
+
+assert.match(
+  source,
+  /replaceGalleryPhotoImage/,
+  'Gallery editor should use the dedicated image replacement API.',
+);
+
+assert.match(
+  source,
+  /const handleGalleryPhotoReplacement = async \(event: ChangeEvent<HTMLInputElement>\) => \{/,
+  'Gallery editor should have a handler for replacing the selected photo image.',
+);
+
+assert.match(
+  source,
+  /const replaced = await replaceGalleryPhotoImage\(galleryForm\.id, file\);/,
+  'Replacing a gallery image should upload only the file for the current photo.',
+);
+
+assert.match(
+  source,
+  /setGalleryForm\(formFromGalleryPhoto\(replaced\)\)/,
+  'Replacing a gallery image should keep the editor on the same photo with refreshed image fields.',
+);
+
 assert.match(source, /删除图片/);
 
 const galleryPreviewMatch = source.match(

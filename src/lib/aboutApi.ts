@@ -24,6 +24,7 @@ export interface AboutResumeEntry {
   highlightsLabel?: string | null;
   highlights?: AboutResumeHighlight[] | null;
   sortOrder?: number | null;
+  hidden?: boolean | null;
 }
 
 export interface AboutContactItem {

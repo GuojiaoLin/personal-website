@@ -1,6 +1,7 @@
 package com.guojiaolin.website.gallery;
 
 import com.guojiaolin.website.common.BadRequestException;
+import com.guojiaolin.website.common.ImageUploadOptimizationService;
 import com.guojiaolin.website.common.NotFoundException;
 import com.guojiaolin.website.content.ContentStatus;
 import com.guojiaolin.website.gallery.dto.GalleryPhotoRequest;
@@ -44,6 +45,7 @@ public class GalleryPhotoService {
   private final GalleryPhotoRepository galleryPhotos;
   private final HomeGallerySlotRepository homeGallerySlots;
   private final GalleryImageDerivativeService imageDerivatives;
+  private final ImageUploadOptimizationService imageOptimizer;
   private final Path galleryDirectory;
   private final String publicPath;
 
@@ -51,12 +53,14 @@ public class GalleryPhotoService {
     GalleryPhotoRepository galleryPhotos,
     HomeGallerySlotRepository homeGallerySlots,
     GalleryImageDerivativeService imageDerivatives,
+    ImageUploadOptimizationService imageOptimizer,
     @Value("${site.uploads.directory:uploads}") String uploadDirectory,
     @Value("${site.uploads.public-path:/uploads}") String publicPath
   ) {
     this.galleryPhotos = galleryPhotos;
     this.homeGallerySlots = homeGallerySlots;
     this.imageDerivatives = imageDerivatives;
+    this.imageOptimizer = imageOptimizer;
     this.galleryDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize().resolve("gallery").normalize();
     this.publicPath = normalizePublicPath(publicPath);
   }
@@ -77,6 +81,51 @@ public class GalleryPhotoService {
 
   @Transactional
   public GalleryPhotoResponse upload(MultipartFile file, GalleryPhotoRequest request) {
+    var storedImage = storeImage(file);
+    var photo = new GalleryPhoto();
+    applyImage(photo, storedImage);
+    apply(photo, request, true);
+
+    return GalleryPhotoResponse.from(galleryPhotos.save(photo));
+  }
+
+  @Transactional
+  public GalleryPhotoResponse update(UUID id, GalleryPhotoRequest request) {
+    var photo = galleryPhotos.findById(id)
+      .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
+
+    apply(photo, request, false);
+    return GalleryPhotoResponse.from(photo);
+  }
+
+  @Transactional
+  public GalleryPhotoResponse replaceImage(UUID id, MultipartFile file) {
+    var photo = galleryPhotos.findById(id)
+      .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
+    var oldFileName = photo.getFileName();
+    var storedImage = storeImage(file);
+
+    applyImage(photo, storedImage);
+    deleteFile(oldFileName);
+    deleteDerivativeFile(oldFileName, "thumbnail");
+    deleteDerivativeFile(oldFileName, "medium");
+
+    return GalleryPhotoResponse.from(photo);
+  }
+
+  @Transactional
+  public void delete(UUID id) {
+    var photo = galleryPhotos.findById(id)
+      .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
+
+    homeGallerySlots.findAllByGalleryPhoto(photo).forEach((slot) -> slot.setGalleryPhoto(null));
+    deleteFile(photo.getFileName());
+    deleteDerivativeFile(photo.getFileName(), "thumbnail");
+    deleteDerivativeFile(photo.getFileName(), "medium");
+    galleryPhotos.delete(photo);
+  }
+
+  private StoredGalleryImage storeImage(MultipartFile file) {
     if (file == null || file.isEmpty()) {
       throw new BadRequestException("Please choose an image file.");
     }
@@ -103,41 +152,29 @@ public class GalleryPhotoService {
         Files.copy(input, destination);
       }
 
-      var derivatives = imageDerivatives.createDerivatives(destination, galleryDirectory, fileName);
-      var photo = new GalleryPhoto();
-      photo.setFileName(fileName);
-      photo.setMimeType(mimeType);
-      photo.setSizeBytes(file.getSize());
-      photo.setUrl(toPublicUrl(fileName));
-      photo.setThumbnailUrl(toPublicUrl(derivatives.thumbnailFileName()));
-      photo.setMediumUrl(toPublicUrl(derivatives.mediumFileName()));
-      apply(photo, request, true);
-
-      return GalleryPhotoResponse.from(galleryPhotos.save(photo));
+      var optimized = imageOptimizer.optimize(destination, galleryDirectory, fileName, mimeType);
+      var optimizedPath = galleryDirectory.resolve(optimized.fileName()).normalize();
+      var derivatives = imageDerivatives.createDerivatives(optimizedPath, galleryDirectory, optimized.fileName());
+      return new StoredGalleryImage(
+        optimized.fileName(),
+        optimized.mimeType(),
+        optimized.sizeBytes(),
+        toPublicUrl(optimized.fileName()),
+        toPublicUrl(derivatives.thumbnailFileName()),
+        toPublicUrl(derivatives.mediumFileName())
+      );
     } catch (IOException error) {
       throw new BadRequestException("Image upload failed.");
     }
   }
 
-  @Transactional
-  public GalleryPhotoResponse update(UUID id, GalleryPhotoRequest request) {
-    var photo = galleryPhotos.findById(id)
-      .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
-
-    apply(photo, request, false);
-    return GalleryPhotoResponse.from(photo);
-  }
-
-  @Transactional
-  public void delete(UUID id) {
-    var photo = galleryPhotos.findById(id)
-      .orElseThrow(() -> new NotFoundException("Gallery photo not found."));
-
-    homeGallerySlots.findAllByGalleryPhoto(photo).forEach((slot) -> slot.setGalleryPhoto(null));
-    deleteFile(photo.getFileName());
-    deleteDerivativeFile(photo.getFileName(), "thumbnail");
-    deleteDerivativeFile(photo.getFileName(), "medium");
-    galleryPhotos.delete(photo);
+  private void applyImage(GalleryPhoto photo, StoredGalleryImage image) {
+    photo.setFileName(image.fileName());
+    photo.setMimeType(image.mimeType());
+    photo.setSizeBytes(image.sizeBytes());
+    photo.setUrl(image.url());
+    photo.setThumbnailUrl(image.thumbnailUrl());
+    photo.setMediumUrl(image.mediumUrl());
   }
 
   private void apply(GalleryPhoto photo, GalleryPhotoRequest request, boolean newUpload) {
@@ -246,5 +283,15 @@ public class GalleryPhotoService {
 
   private String clean(String value) {
     return value == null ? "" : value.trim();
+  }
+
+  private record StoredGalleryImage(
+    String fileName,
+    String mimeType,
+    long sizeBytes,
+    String url,
+    String thumbnailUrl,
+    String mediumUrl
+  ) {
   }
 }

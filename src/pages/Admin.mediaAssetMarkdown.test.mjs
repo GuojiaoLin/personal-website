@@ -15,7 +15,8 @@ assert.ok(copyHandlerMatch, 'Media asset markdown copy handler should exist.');
 
 const copyHandlerBlock = copyHandlerMatch[0];
 
-assert.match(copyHandlerBlock, /const markdown = `!\[\[\$\{asset\.fileName\}\|640\]\]`;/);
+assert.match(copyHandlerBlock, /const markdown = `!\[\[\$\{asset\.url\}\|640\]\]`;/);
+assert.doesNotMatch(copyHandlerBlock, /asset\.fileName\}\|640/);
 assert.match(copyHandlerBlock, /copyTextToClipboard\(markdown\)/);
 assert.doesNotMatch(copyHandlerBlock, /setForm\(/);
 assert.doesNotMatch(copyHandlerBlock, /contentMarkdown/);

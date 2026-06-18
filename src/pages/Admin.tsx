@@ -59,6 +59,7 @@ import {
   listAdminResumeVersions,
   loginAdmin,
   logoutAdmin,
+  replaceGalleryPhotoImage,
   updateAdminHomeGallerySlots,
   updateGalleryPhoto,
   updateProject,
@@ -172,6 +173,7 @@ interface GalleryPhotoForm {
   sortOrder: number;
   url: string;
   fileName: string;
+  status: ContentStatus;
 }
 
 interface PasswordChangeForm {
@@ -220,6 +222,7 @@ const emptyGalleryPhotoForm = (): GalleryPhotoForm => ({
   sortOrder: 0,
   url: '',
   fileName: '',
+  status: 'draft',
 });
 
 const emptyPasswordChangeForm = (): PasswordChangeForm => ({
@@ -257,6 +260,7 @@ const emptyAboutResumeEntry = (sortOrder: number): AboutResumeEntry => ({
   highlightsLabel: '项目亮点',
   highlights: [],
   sortOrder,
+  hidden: false,
 });
 
 const emptyAboutContactItem = (): AboutContactItem => ({
@@ -314,6 +318,7 @@ const aboutContentToPayload = (content: AboutContentRecord): AboutContentPayload
     highlightsLabel: entry.highlightsLabel?.trim() || '项目亮点',
     highlights: entry.highlights ?? [],
     sortOrder: Number(entry.sortOrder) || index + 1,
+    hidden: Boolean(entry.hidden),
   })).filter((entry) => entry.title),
   contactHeading: content.contactHeading.trim() || '连接我的世界',
   contactItems: content.contactItems.map((item) => ({
@@ -532,6 +537,7 @@ const formFromGalleryPhoto = (photo: GalleryPhotoRecord): GalleryPhotoForm => ({
   sortOrder: photo.sortOrder,
   url: photo.url,
   fileName: photo.fileName,
+  status: photo.status,
 });
 
 const toGalleryPhotoPayload = (form: GalleryPhotoForm, status: ContentStatus = 'draft'): GalleryPhotoPayload => ({
@@ -562,6 +568,7 @@ const Admin = () => {
   const [isHomeGallerySlotsOpen, setIsHomeGallerySlotsOpen] = useState(true);
   const [resumeVersions, setResumeVersions] = useState<ResumeVersionRecord[]>([]);
   const [aboutContent, setAboutContent] = useState<AboutContentRecord>(() => emptyAboutContent());
+  const [aboutResumeHighlightDrafts, setAboutResumeHighlightDrafts] = useState<Record<number, string>>({});
   const [isAboutAssetsOpen, setIsAboutAssetsOpen] = useState(true);
   const [isAboutResumeVersionsOpen, setIsAboutResumeVersionsOpen] = useState(true);
   const [isAboutProfileOpen, setIsAboutProfileOpen] = useState(true);
@@ -581,6 +588,7 @@ const Admin = () => {
   const [aboutAssetUploadTarget, setAboutAssetUploadTarget] = useState<'portraitImageUrl' | 'wechatQrImageUrl' | null>(null);
   const [isUploadingProjectCover, setIsUploadingProjectCover] = useState(false);
   const [isUploadingGalleryPhoto, setIsUploadingGalleryPhoto] = useState(false);
+  const [isReplacingGalleryPhotoImage, setIsReplacingGalleryPhotoImage] = useState(false);
   const [isUploadingResume, setIsUploadingResume] = useState(false);
   const [commentActionId, setCommentActionId] = useState<string | null>(null);
   const [galleryActionId, setGalleryActionId] = useState<string | null>(null);
@@ -637,6 +645,12 @@ const Admin = () => {
     () => projects.find((project) => project.id === selectedProjectId) ?? projects.find((project) => project.id === projectForm.id),
     [projectForm.id, projects, selectedProjectId]
   );
+  const projectVisibilityTargetStatus = projectForm.status === 'hidden' ? 'published' : 'hidden';
+  const galleryVisibilityTargetStatus = galleryForm.status === 'hidden' ? 'published' : 'hidden';
+  const galleryVisibilityButtonLabel = galleryForm.status === 'hidden' ? '显示图片' : '隐藏图片';
+  const projectVisibilityButtonLabel = projectForm.status === 'hidden' ? '显示项目' : '隐藏项目';
+  const blogVisibilityTargetStatus = form.status === 'hidden' ? 'published' : 'hidden';
+  const blogVisibilityButtonLabel = form.status === 'hidden' ? '显示博客' : '隐藏博客';
 
   const commentStats = useMemo(() => ({
     all: comments.length,
@@ -691,6 +705,7 @@ const Admin = () => {
       setGalleryPhotos(nextGalleryPhotos);
       setHomeGallerySlots(homeGallerySlotsFromRecords(nextHomeGallerySlots));
       setAboutContent(nextAboutContent);
+      setAboutResumeHighlightDrafts({});
       setAboutError('');
       setHomeGalleryError('');
       listAdminResumeVersions()
@@ -1131,7 +1146,7 @@ const Admin = () => {
   const updateAboutResumeEntry = (
     index: number,
     field: keyof AboutResumeEntry,
-    value: string | number | string[] | AboutResumeHighlight[]
+    value: string | number | boolean | string[] | AboutResumeHighlight[]
   ) => {
     setAboutContent((current) => ({
       ...current,
@@ -1139,6 +1154,14 @@ const Admin = () => {
         itemIndex === index ? { ...entry, [field]: value } : entry
       )),
     }));
+  };
+
+  const handleAboutResumeHighlightsChange = (index: number, value: string) => {
+    setAboutResumeHighlightDrafts((current) => ({
+      ...current,
+      [index]: value,
+    }));
+    updateAboutResumeEntry(index, 'highlights', textToHighlights(value));
   };
 
   const addAboutResumeEntry = () => {
@@ -1153,6 +1176,18 @@ const Admin = () => {
   };
 
   const removeAboutResumeEntry = (index: number) => {
+    setAboutResumeHighlightDrafts((current) => {
+      const nextDrafts: Record<number, string> = {};
+
+      Object.entries(current).forEach(([draftIndexText, value]) => {
+        const draftIndex = Number(draftIndexText);
+
+        if (!Number.isInteger(draftIndex) || draftIndex === index) return;
+        nextDrafts[draftIndex > index ? draftIndex - 1 : draftIndex] = value;
+      });
+
+      return nextDrafts;
+    });
     setAboutContent((current) => ({
       ...current,
       resumeEntries: current.resumeEntries.filter((_, itemIndex) => itemIndex !== index),
@@ -1188,7 +1223,7 @@ const Admin = () => {
   };
 
   const copyMediaAssetMarkdownUrl = async (asset: MediaAssetRecord) => {
-    const markdown = `![[${asset.fileName}|640]]`;
+    const markdown = `![[${asset.url}|640]]`;
 
     try {
       await copyTextToClipboard(markdown);
@@ -1453,6 +1488,42 @@ const Admin = () => {
     }
   };
 
+  const handleGalleryPhotoReplacement = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    setError('');
+    setNotice('');
+    setGalleryError('');
+
+    if (!galleryForm.id) {
+      setGalleryError('请先选择一张图册图片，再更换图片。');
+      input.value = '';
+      return;
+    }
+
+    setIsReplacingGalleryPhotoImage(true);
+
+    try {
+      const replaced = await replaceGalleryPhotoImage(galleryForm.id, file);
+      setGalleryPhotos((current) => current.map((photo) => (photo.id === replaced.id ? replaced : photo)));
+      setGalleryForm(formFromGalleryPhoto(replaced));
+      setSelectedType('gallery');
+      setContentTab('gallery');
+      setSelectedGalleryPhotoId(replaced.id);
+      setIsCreatingNew(false);
+      setNotice('图册图片已更换，标题、描述和排序保持不变。');
+      await refreshContent();
+    } catch (replaceError) {
+      setGalleryError(replaceError instanceof Error ? replaceError.message : '图册图片更换失败。');
+    } finally {
+      setIsReplacingGalleryPhotoImage(false);
+      input.value = '';
+    }
+  };
+
   const saveGalleryPhoto = async (status: ContentStatus) => {
     setError('');
     setNotice('');
@@ -1478,7 +1549,11 @@ const Admin = () => {
       setContentTab('gallery');
       setSelectedGalleryPhotoId(null);
       setIsCreatingNew(true);
-      setNotice('图册图片已发布。');
+      setNotice(status === 'hidden'
+        ? '图册图片已隐藏，前台不会展示。'
+        : status === 'published'
+          ? '图册图片已发布，前台会展示。'
+          : '图册图片草稿已保存。');
       await refreshContent();
     } catch (saveError) {
       setGalleryError(saveError instanceof Error ? saveError.message : '图册图片保存失败。');
@@ -1604,6 +1679,7 @@ const Admin = () => {
     try {
       const saved = await updateAdminAboutContent(payload);
       setAboutContent(saved);
+      setAboutResumeHighlightDrafts({});
       setSelectedType('about');
       setContentTab('about');
       setNotice('个人主页内容已保存，前台刷新后会展示最新内容。');
@@ -1679,7 +1755,11 @@ const Admin = () => {
       setSelectedProjectId(saved.id);
       setSelectedBlogId(null);
       setIsCreatingNew(false);
-      setNotice(status === 'published' ? '项目笔记已发布，可以在前台看到。' : '项目草稿已保存。');
+      setNotice(status === 'published'
+        ? '项目笔记已发布，可以在前台看到。'
+        : status === 'hidden'
+          ? '项目已隐藏，前台不会展示。'
+          : '项目草稿已保存。');
       await refreshContent();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '项目保存失败。');
@@ -1745,7 +1825,11 @@ const Admin = () => {
       setSelectedBlogId(saved.id);
       setSelectedProjectId(saved.projectId);
       setIsCreatingNew(false);
-      setNotice(status === 'published' ? '已发布，可以查看预览效果。' : '草稿已保存。');
+      setNotice(status === 'published'
+        ? '已发布，可以查看预览效果。'
+        : status === 'hidden'
+          ? '博客已隐藏，前台不会展示。'
+          : '草稿已保存。');
       setEditorMode(status === 'published' ? 'preview' : 'edit');
       await refreshContent();
     } catch (saveError) {
@@ -2747,16 +2831,29 @@ const Admin = () => {
                   {isAboutResumeOpen && (
                     <div id="about-resume-entries" className="space-y-4">
                       {aboutContent.resumeEntries.map((entry, index) => (
-                        <article key={`${entry.title}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <article key={`${entry.title}-${index}`} className={cn('rounded-lg border border-slate-200 bg-slate-50 p-4', entry.hidden && 'opacity-70')}>
                         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-black text-slate-800">{entry.title || '未命名项目简历'}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-black text-slate-800">{entry.title || '未命名项目简历'}</p>
+                              {entry.hidden && (
+                                <Badge className="border-none bg-slate-900 text-[11px] font-black text-white">
+                                  已隐藏
+                                </Badge>
+                              )}
+                            </div>
                             <p className="mt-1 text-xs font-bold text-slate-400">排序 {entry.sortOrder ?? index + 1}</p>
                           </div>
-                          <Button type="button" variant="outline" size="sm" className="gap-1.5 border-red-200 text-red-700 hover:bg-red-50" onClick={() => removeAboutResumeEntry(index)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                            删除
-                          </Button>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => updateAboutResumeEntry(index, 'hidden', !entry.hidden)}>
+                              <EyeOff className="h-3.5 w-3.5" />
+                              {entry.hidden ? '显示' : '隐藏'}
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" className="gap-1.5 border-red-200 text-red-700 hover:bg-red-50" onClick={() => removeAboutResumeEntry(index)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                              删除
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="grid gap-3 xl:grid-cols-[180px_minmax(0,1fr)_180px_120px]">
@@ -2813,8 +2910,8 @@ const Admin = () => {
                           <label>
                             <span className="mb-2 block text-xs font-black text-slate-500">亮点列表</span>
                             <textarea
-                              value={highlightsToText(entry.highlights)}
-                              onChange={(event) => updateAboutResumeEntry(index, 'highlights', textToHighlights(event.target.value))}
+                              value={aboutResumeHighlightDrafts[index] ?? highlightsToText(entry.highlights)}
+                              onChange={(event) => handleAboutResumeHighlightsChange(index, event.target.value)}
                               rows={6}
                               className="w-full resize-y rounded-md border border-slate-200 px-3 py-2 text-sm font-medium leading-6 text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-950"
                               placeholder="Agent 链路编排：将请求拆为多个可观测节点。"
@@ -3000,6 +3097,21 @@ const Admin = () => {
                       <div className="shrink-0 border-t border-slate-100 p-3">
                         <p className="truncate text-sm font-black text-slate-700">{galleryForm.fileName}</p>
                         <p className="mt-1 truncate text-xs font-bold text-slate-400">{galleryForm.url}</p>
+                        <label className={cn(
+                          'mt-3 inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-50',
+                          isReplacingGalleryPhotoImage && 'pointer-events-none opacity-70'
+                        )}>
+                          {isReplacingGalleryPhotoImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                          更换图片
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/gif,image/webp"
+                            className="sr-only"
+                            disabled={isReplacingGalleryPhotoImage}
+                            aria-label="更换图册图片，保留当前文案"
+                            onChange={(event) => void handleGalleryPhotoReplacement(event)}
+                          />
+                        </label>
                       </div>
                     </div>
                   ) : (
@@ -3071,6 +3183,16 @@ const Admin = () => {
                         <Button type="button" className="gap-2 bg-slate-950 text-white hover:bg-slate-800" disabled={isSavingGalleryPhoto} onClick={() => void saveGalleryPhoto('published')}>
                           <Send className="h-4 w-4" />
                           发布展示
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-950"
+                          disabled={isSavingGalleryPhoto}
+                          onClick={() => void saveGalleryPhoto(galleryVisibilityTargetStatus)}
+                        >
+                          <EyeOff className="h-4 w-4" />
+                          {galleryVisibilityButtonLabel}
                         </Button>
                       </div>
                     )}
@@ -3267,6 +3389,10 @@ const Admin = () => {
                       {isSavingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                       保存草稿
                     </Button>
+                    <Button type="button" variant="outline" className="gap-2" disabled={isSavingProject} onClick={() => void saveProject(projectVisibilityTargetStatus)}>
+                      <EyeOff className="h-4 w-4" />
+                      {projectVisibilityButtonLabel}
+                    </Button>
                     <Button type="button" className="gap-2 bg-slate-950 text-white hover:bg-slate-800" disabled={isSavingProject} onClick={() => void saveProject('published')}>
                       <Send className="h-4 w-4" />
                       发布项目
@@ -3441,6 +3567,10 @@ const Admin = () => {
                         <Button type="button" variant="outline" className="gap-2" disabled={isSaving} onClick={() => void save('draft')}>
                           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                           保存草稿
+                        </Button>
+                        <Button type="button" variant="outline" className="gap-2" disabled={isSaving} onClick={() => void save(blogVisibilityTargetStatus)}>
+                          <EyeOff className="h-4 w-4" />
+                          {blogVisibilityButtonLabel}
                         </Button>
                       </>
                     )}

@@ -27,12 +27,12 @@ public class AboutContentController {
 
   @GetMapping("/api/about")
   public AboutContentResponse getPublic() {
-    return aboutContent.get();
+    return aboutContent.getPublic();
   }
 
   @GetMapping("/api/admin/about")
   public AboutContentResponse getAdmin() {
-    return aboutContent.get();
+    return aboutContent.getAdmin();
   }
 
   @PutMapping("/api/admin/about")

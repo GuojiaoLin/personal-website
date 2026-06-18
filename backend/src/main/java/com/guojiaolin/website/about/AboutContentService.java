@@ -38,14 +38,24 @@ public class AboutContentService {
 
   @Transactional
   public AboutContentResponse get() {
-    return toResponse(getOrCreateMainContent());
+    return getPublic();
+  }
+
+  @Transactional
+  public AboutContentResponse getPublic() {
+    return toResponse(getOrCreateMainContent(), false);
+  }
+
+  @Transactional
+  public AboutContentResponse getAdmin() {
+    return toResponse(getOrCreateMainContent(), true);
   }
 
   @Transactional
   public AboutContentResponse update(AboutContentRequest request) {
     var content = getOrCreateMainContent();
     apply(content, request);
-    return toResponse(content);
+    return toResponse(content, true);
   }
 
   private AboutContent getOrCreateMainContent() {
@@ -68,13 +78,14 @@ public class AboutContentService {
     content.setSocialLinks(toJson(normalizeSocialLinks(request.socialLinks())));
   }
 
-  private AboutContentResponse toResponse(AboutContent content) {
+  private AboutContentResponse toResponse(AboutContent content, boolean includeHiddenResumeEntries) {
     return new AboutContentResponse(
       content.getId(),
       content.getPortraitImageUrl(),
       content.getWechatQrImageUrl(),
       fromJson(content.getProfileDetails(), PROFILE_DETAILS),
       fromJson(content.getResumeEntries(), RESUME_ENTRIES).stream()
+        .filter(entry -> includeHiddenResumeEntries || !Boolean.TRUE.equals(entry.hidden()))
         .sorted(Comparator.comparing(entry -> entry.sortOrder() == null ? 0 : entry.sortOrder()))
         .toList(),
       content.getContactHeading(),
@@ -116,7 +127,8 @@ public class AboutContentService {
             new AboutResumeHighlight("评测与可观测", "自研确定性 Agent Harness，保留真实流水线、替换 LLM/MCP/DB/MQ 叶子；结合 ragas、DeepEval、LangSmith 做质量门禁和 trace；覆盖双 health、任务双状态机、usage 成本核算与启动期轻量迁移。"),
             new AboutResumeHighlight("生产部署与线上排障", "独立完成 Docker Compose 全栈上线，配置 Nginx 分流、HTTPS、MinIO 预签名媒体子域；上线首日定位连接池 ping 随机 500 事故，锁定 PyMySQL 与 SQLAlchemy 依赖版本组合完成修复。")
           ),
-          1
+          1,
+          false
         ),
         new AboutResumeEntry(
           "Project Resume",
@@ -136,7 +148,8 @@ public class AboutContentService {
             new AboutResumeHighlight("多模型协作与工程化", "按职责解耦 Vision、Embedding、Reranker、主生成、Judge 五类模型，OpenAI-compatible 统一封装；FastAPI 提供 /chat、multipart 上传与 SSE 流式接口，Redis 会话记忆，Reranker 懒加载失败回退 RRF。"),
             new AboutResumeHighlight("Badcase 数据闭环", "通过指标组合将图片配错问题定位到候选图召回层，离线为 2,597 张手册图生成视觉 caption 并接入检索文本，在全人工确认的 gold v3 标签集上做 before/after 全量回归验证收益。")
           ),
-          2
+          2,
+          false
         ),
         new AboutResumeEntry(
           "Publication Resume",
@@ -154,7 +167,8 @@ public class AboutContentService {
             new AboutResumeHighlight("实验效果", "对比 9 个 baseline，在 Sports/Clothing/Electronics 上 Recall@20 分别提升 2.28%/3.54%/3.82%，NDCG@20 分别提升 3.13%/5.67%/2.65%；消融、长尾分组、t-SNE 可视化验证各模块有效性。"),
             new AboutResumeHighlight("开源实现", "代码与数据已在 GitHub 开源；基于 MMRec 框架与 PyTorch 实现，在四个公开 Amazon 数据集上达到 SOTA。")
           ),
-          3
+          3,
+          false
         )
       ),
       "连接我的世界",
@@ -195,7 +209,8 @@ public class AboutContentService {
         clean(item.description()),
         clean(item.highlightsLabel()).isBlank() ? "项目亮点" : clean(item.highlightsLabel()),
         normalizeHighlights(item.highlights()),
-        item.sortOrder() == null ? 0 : item.sortOrder()
+        item.sortOrder() == null ? 0 : item.sortOrder(),
+        Boolean.TRUE.equals(item.hidden())
       ))
       .toList();
   }

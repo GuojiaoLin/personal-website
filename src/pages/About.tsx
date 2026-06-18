@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { Mail, MapPin, GraduationCap, Globe, Share2, X, Phone, UserRound } from 'lucide-react';
@@ -263,7 +264,9 @@ const About = () => {
   }, []);
 
   const orderedResumeEntries = useMemo(() => (
-    [...aboutContent.resumeEntries].sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0))
+    [...aboutContent.resumeEntries]
+      .filter((entry) => !entry.hidden)
+      .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0))
   ), [aboutContent.resumeEntries]);
 
   const copyProfileDetail = async (label: string, value?: string | null) => {
@@ -438,16 +441,16 @@ const About = () => {
         </div>
       </section>
 
-      {isWechatOpen && (
+      {isWechatOpen && createPortal(
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/30 px-4 py-8 backdrop-blur-sm"
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4 py-8 backdrop-blur-sm"
           onClick={() => setIsWechatOpen(false)}
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="wechat-dialog-title"
-            className="relative w-full max-w-sm rounded-[28px] border border-slate-100 bg-white p-6 text-center shadow-[0_30px_90px_-42px_rgba(15,23,42,0.85)]"
+            className="relative max-h-[calc(100dvh-4rem)] w-full max-w-sm overflow-y-auto rounded-[28px] border border-slate-100 bg-white p-6 text-center shadow-[0_30px_90px_-42px_rgba(15,23,42,0.85)]"
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -462,21 +465,22 @@ const About = () => {
             <h2 id="wechat-dialog-title" className="mb-5 text-2xl font-black tracking-tight text-slate-950">
               微信添加好友
             </h2>
-            <div className="mx-auto grid aspect-square w-full max-w-[280px] place-items-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 shadow-sm">
+            <div className="mx-auto w-full max-w-[280px] rounded-2xl border border-slate-100 bg-slate-50 p-2 shadow-sm">
               <img
                 src={aboutContent.wechatQrImageUrl || wechatQrImage}
                 alt="微信添加好友二维码"
                 width={280}
-                height={280}
+                height={416}
                 decoding="async"
-                className="h-full w-full object-contain"
+                className="block h-auto max-h-[58dvh] w-full rounded-xl object-contain"
               />
             </div>
             <p className="mt-5 text-sm font-bold leading-6 text-slate-500">
               扫一扫，添加我为微信好友。
             </p>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </Layout>
   );

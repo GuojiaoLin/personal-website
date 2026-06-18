@@ -29,14 +29,19 @@ public class BlogPostService {
 
   @Transactional(readOnly = true)
   public List<BlogPostResponse> listPublished() {
-    return blogPosts.findAllByStatus(ContentStatus.PUBLISHED, BLOG_SORT).stream()
+    return blogPosts.findAllByStatusAndProject_Status(ContentStatus.PUBLISHED, ContentStatus.PUBLISHED, BLOG_SORT).stream()
       .map(BlogPostResponse::from)
       .toList();
   }
 
   @Transactional(readOnly = true)
   public List<BlogPostResponse> listHomeFeatured() {
-    return blogPosts.findAllByStatusAndFeaturedOnHome(ContentStatus.PUBLISHED, true, HOME_FEATURED_SORT).stream()
+    return blogPosts.findAllByStatusAndFeaturedOnHomeAndProject_Status(
+        ContentStatus.PUBLISHED,
+        true,
+        ContentStatus.PUBLISHED,
+        HOME_FEATURED_SORT
+      ).stream()
       .limit(HOME_FEATURED_LIMIT)
       .map(BlogPostResponse::from)
       .toList();
@@ -105,13 +110,18 @@ public class BlogPostService {
 
   @Transactional(readOnly = true)
   public BlogPost findPublishedBySlug(String slug) {
-    return blogPosts.findBySlugIgnoreCaseAndStatus(slug, ContentStatus.PUBLISHED)
+    return blogPosts.findBySlugIgnoreCaseAndStatusAndProject_Status(slug, ContentStatus.PUBLISHED, ContentStatus.PUBLISHED)
       .orElseThrow(() -> new NotFoundException("Blog post not found."));
   }
 
   @Transactional(readOnly = true)
   public BlogPost findPublishedByProjectSlugAndSlug(String projectSlug, String slug) {
-    return blogPosts.findByProject_SlugIgnoreCaseAndSlugIgnoreCaseAndStatus(projectSlug, slug, ContentStatus.PUBLISHED)
+    return blogPosts.findByProject_SlugIgnoreCaseAndSlugIgnoreCaseAndStatusAndProject_Status(
+        projectSlug,
+        slug,
+        ContentStatus.PUBLISHED,
+        ContentStatus.PUBLISHED
+      )
       .orElseThrow(() -> new NotFoundException("Blog post not found."));
   }
 

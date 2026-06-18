@@ -18,6 +18,7 @@ public class ProjectLogoImageService {
   private static final int MAX_SIDE = 1600;
   private static final int YELLOW_RGB = 0xffff00;
   private static final int EDGE_BACKGROUND_DISTANCE = 130;
+  private static final int LIGHT_CANVAS_BACKGROUND_DISTANCE = 18;
   private static final int LOCAL_BACKGROUND_DISTANCE = 58;
 
   public ProcessedProjectLogo process(Path source, Path directory, String fileName, String mimeType) {
@@ -91,15 +92,15 @@ public class ProjectLogoImageService {
     var height = image.getHeight();
     var background = new boolean[width * height];
     var queue = new ArrayDeque<Integer>();
-    var edgeColors = sampleCornerBackgroundColors(image);
+    var profile = backgroundProfileFor(image);
 
     for (var x = 0; x < width; x += 1) {
-      seedBackground(image, background, queue, edgeColors, x, 0);
-      seedBackground(image, background, queue, edgeColors, x, height - 1);
+      seedBackground(image, background, queue, profile, x, 0);
+      seedBackground(image, background, queue, profile, x, height - 1);
     }
     for (var y = 1; y < height - 1; y += 1) {
-      seedBackground(image, background, queue, edgeColors, 0, y);
-      seedBackground(image, background, queue, edgeColors, width - 1, y);
+      seedBackground(image, background, queue, profile, 0, y);
+      seedBackground(image, background, queue, profile, width - 1, y);
     }
 
     if (queue.isEmpty()) {
@@ -115,25 +116,52 @@ public class ProjectLogoImageService {
       var y = index / width;
       var current = image.getRGB(x, y);
 
-      addNeighbor(image, background, queue, edgeColors, current, x - 1, y);
-      addNeighbor(image, background, queue, edgeColors, current, x + 1, y);
-      addNeighbor(image, background, queue, edgeColors, current, x, y - 1);
-      addNeighbor(image, background, queue, edgeColors, current, x, y + 1);
+      addNeighbor(image, background, queue, profile, current, x - 1, y);
+      addNeighbor(image, background, queue, profile, current, x + 1, y);
+      addNeighbor(image, background, queue, profile, current, x, y - 1);
+      addNeighbor(image, background, queue, profile, current, x, y + 1);
     }
 
     return background;
+  }
+
+  private BackgroundProfile backgroundProfileFor(BufferedImage image) {
+    var edgeColors = sampleCornerBackgroundColors(image);
+    var lightCanvas = isLightNeutralCanvas(edgeColors);
+
+    return new BackgroundProfile(
+      edgeColors,
+      lightCanvas ? LIGHT_CANVAS_BACKGROUND_DISTANCE : EDGE_BACKGROUND_DISTANCE,
+      !lightCanvas
+    );
+  }
+
+  private boolean isLightNeutralCanvas(int[] colors) {
+    for (var color : colors) {
+      var red = (color >> 16) & 0xff;
+      var green = (color >> 8) & 0xff;
+      var blue = color & 0xff;
+      var max = Math.max(red, Math.max(green, blue));
+      var min = Math.min(red, Math.min(green, blue));
+
+      if (min < 240 || max - min > 18) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private void seedBackground(
     BufferedImage image,
     boolean[] background,
     ArrayDeque<Integer> queue,
-    int[] edgeColors,
+    BackgroundProfile profile,
     int x,
     int y
   ) {
     var rgb = image.getRGB(x, y);
-    if (alphaOf(rgb) < 250 || isCloseToEdgeBackground(rgb, edgeColors)) {
+    if (alphaOf(rgb) < 250 || isCloseToEdgeBackground(rgb, profile)) {
       seedBackgroundUnchecked(background, queue, y * image.getWidth() + x);
     }
   }
@@ -149,7 +177,7 @@ public class ProjectLogoImageService {
     BufferedImage image,
     boolean[] background,
     ArrayDeque<Integer> queue,
-    int[] edgeColors,
+    BackgroundProfile profile,
     int currentRgb,
     int x,
     int y
@@ -165,8 +193,8 @@ public class ProjectLogoImageService {
 
     var nextRgb = image.getRGB(x, y);
     if (alphaOf(nextRgb) < 250
-      || colorDistance(nextRgb, currentRgb) <= LOCAL_BACKGROUND_DISTANCE
-      || isCloseToEdgeBackground(nextRgb, edgeColors)) {
+      || profile.allowLocalExpansion() && colorDistance(nextRgb, currentRgb) <= LOCAL_BACKGROUND_DISTANCE
+      || isCloseToEdgeBackground(nextRgb, profile)) {
       background[index] = true;
       queue.add(index);
     }
@@ -213,9 +241,9 @@ public class ProjectLogoImageService {
     return ((int) (red / count) << 16) | ((int) (green / count) << 8) | (int) (blue / count);
   }
 
-  private boolean isCloseToEdgeBackground(int rgb, int[] edgeColors) {
-    for (var edgeColor : edgeColors) {
-      if (colorDistance(rgb, edgeColor) <= EDGE_BACKGROUND_DISTANCE) {
+  private boolean isCloseToEdgeBackground(int rgb, BackgroundProfile profile) {
+    for (var edgeColor : profile.edgeColors()) {
+      if (colorDistance(rgb, edgeColor) <= profile.edgeDistance()) {
         return true;
       }
     }
@@ -294,6 +322,9 @@ public class ProjectLogoImageService {
     } catch (IOException error) {
       return 0L;
     }
+  }
+
+  private record BackgroundProfile(int[] edgeColors, int edgeDistance, boolean allowLocalExpansion) {
   }
 
   public record ProcessedProjectLogo(String fileName, String mimeType, long sizeBytes) {

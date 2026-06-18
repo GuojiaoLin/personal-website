@@ -161,14 +161,8 @@ const buildBlogProjects = (posts: BlogPost[], publishedProjects: PublishedProjec
   });
 
   posts.forEach((post) => {
-    const project = projects.get(post.projectSlug) ?? {
-      slug: post.projectSlug,
-      title: post.projectTitle,
-      description: post.projectDescription,
-      coverImageUrl: undefined,
-      projectIcon: undefined,
-      posts: [],
-    };
+    const project = projects.get(post.projectSlug);
+    if (!project) return;
 
     project.posts.push(post);
     project.posts.sort(comparePosts);
@@ -176,7 +170,6 @@ const buildBlogProjects = (posts: BlogPost[], publishedProjects: PublishedProjec
       project.description = post.projectDescription;
     }
 
-    projects.set(post.projectSlug, project);
   });
 
   return Array.from(projects.values()).sort((first, second) => (

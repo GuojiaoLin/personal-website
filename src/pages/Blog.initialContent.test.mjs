@@ -63,3 +63,12 @@ assert.equal(
   false,
   'Blog page should not restore local project folders when the database API fails.',
 );
+
+const buildBlogProjectsMatch = source.match(/const buildBlogProjects = \(posts: BlogPost\[\], publishedProjects: PublishedProjectRecord\[\]\) => \{[\s\S]*?\n\};/);
+assert.ok(buildBlogProjectsMatch, 'Blog page should build project folders from public project records.');
+
+assert.match(
+  buildBlogProjectsMatch[0],
+  /const project = projects\.get\(post\.projectSlug\);\s+if \(!project\) return;/,
+  'Blog page should not synthesize project folders for posts whose project is not public.',
+);

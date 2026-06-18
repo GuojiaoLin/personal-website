@@ -10,19 +10,29 @@ public interface BlogPostRepository extends JpaRepository<BlogPost, UUID> {
 
   Optional<BlogPost> findBySlugIgnoreCase(String slug);
 
-  Optional<BlogPost> findBySlugIgnoreCaseAndStatus(String slug, ContentStatus status);
+  Optional<BlogPost> findBySlugIgnoreCaseAndStatusAndProject_Status(
+    String slug,
+    ContentStatus status,
+    ContentStatus projectStatus
+  );
 
   Optional<BlogPost> findByProject_IdAndSlugIgnoreCase(UUID projectId, String slug);
 
-  Optional<BlogPost> findByProject_SlugIgnoreCaseAndSlugIgnoreCaseAndStatus(
+  Optional<BlogPost> findByProject_SlugIgnoreCaseAndSlugIgnoreCaseAndStatusAndProject_Status(
     String projectSlug,
     String slug,
-    ContentStatus status
+    ContentStatus status,
+    ContentStatus projectStatus
   );
 
-  List<BlogPost> findAllByStatus(ContentStatus status, Sort sort);
+  List<BlogPost> findAllByStatusAndProject_Status(ContentStatus status, ContentStatus projectStatus, Sort sort);
 
-  List<BlogPost> findAllByStatusAndFeaturedOnHome(ContentStatus status, boolean featuredOnHome, Sort sort);
+  List<BlogPost> findAllByStatusAndFeaturedOnHomeAndProject_Status(
+    ContentStatus status,
+    boolean featuredOnHome,
+    ContentStatus projectStatus,
+    Sort sort
+  );
 
   boolean existsByProject_IdAndSlugIgnoreCase(UUID projectId, String slug);
 }
