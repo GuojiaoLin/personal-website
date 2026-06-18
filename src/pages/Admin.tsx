@@ -1259,7 +1259,7 @@ const Admin = () => {
         ...current,
         coverImageUrl: uploaded.url,
       }));
-      setNotice('项目 Logo 图已上传并处理为黄底 PNG，请保存或发布项目后生效。');
+      setNotice('项目 Logo 图已上传，请保存或发布项目后生效。');
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : '项目 Logo 图上传失败。');
     } finally {
@@ -3460,7 +3460,7 @@ const Admin = () => {
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-slate-700">项目 Logo 图</p>
-                      <p className="mt-1 text-xs font-bold text-slate-400">从本地选择 PNG/JPG Logo 上传，后台会自动替换背景为黄色。</p>
+                      <p className="mt-1 text-xs font-bold text-slate-400">从本地选择 PNG/JPG Logo 上传，后台会保留原图背景。</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <label className={cn(

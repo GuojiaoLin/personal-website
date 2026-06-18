@@ -19,27 +19,31 @@ class ProjectLogoImageServiceTest {
   private final ProjectLogoImageService service = new ProjectLogoImageService();
 
   @Test
-  void replacesEdgeConnectedBackgroundWithYellowPng() throws Exception {
+  void preservesUploadedLogoFileWithoutReplacingBackground() throws Exception {
     var source = uploadDirectory.resolve("cat-logo.jpg");
     ImageIO.write(createLogoWithBackground(), "png", source.toFile());
+    var originalSize = Files.size(source);
+    var originalCorner = rgbAt(ImageIO.read(source.toFile()), 0, 0);
 
     var processed = service.process(source, uploadDirectory, "cat-logo.jpg", "image/jpeg");
 
-    assertThat(processed.fileName()).isEqualTo("cat-logo.png");
-    assertThat(processed.mimeType()).isEqualTo("image/png");
-    assertThat(Files.exists(source)).isFalse();
+    assertThat(processed.fileName()).isEqualTo("cat-logo.jpg");
+    assertThat(processed.mimeType()).isEqualTo("image/jpeg");
+    assertThat(processed.sizeBytes()).isEqualTo(originalSize);
+    assertThat(Files.exists(source)).isTrue();
 
-    var logo = ImageIO.read(uploadDirectory.resolve(processed.fileName()).toFile());
-    assertThat(rgbAt(logo, 0, 0)).isEqualTo(0xffff00);
-    assertThat(rgbAt(logo, 2, 8)).isEqualTo(0xffff00);
+    var logo = ImageIO.read(source.toFile());
+    assertThat(rgbAt(logo, 0, 0)).isEqualTo(originalCorner);
+    assertThat(rgbAt(logo, 0, 0)).isNotEqualTo(0xffff00);
     assertThat(rgbAt(logo, 8, 8)).isEqualTo(new Color(24, 112, 220).getRGB() & 0xffffff);
     logo.flush();
   }
 
   @Test
-  void processesUploadedGeneratedLogoImage() throws Exception {
+  void preservesUploadedGeneratedLogoImage() throws Exception {
     var source = uploadDirectory.resolve("generated-logo.png");
     Files.copy(Path.of("..", "design", "logo.png"), source, StandardCopyOption.REPLACE_EXISTING);
+    var originalCorner = rgbAt(ImageIO.read(source.toFile()), 0, 0);
 
     var processed = service.process(source, uploadDirectory, "generated-logo.png", "image/png");
 
@@ -48,12 +52,12 @@ class ProjectLogoImageServiceTest {
     assertThat(Files.exists(uploadDirectory.resolve(processed.fileName()))).isTrue();
 
     var logo = ImageIO.read(uploadDirectory.resolve(processed.fileName()).toFile());
-    assertThat(rgbAt(logo, 0, 0)).isEqualTo(0xffff00);
+    assertThat(rgbAt(logo, 0, 0)).isEqualTo(originalCorner);
     logo.flush();
   }
 
   @Test
-  void preservesInteriorLogoArtworkWhenReplacingWhiteCanvas() throws Exception {
+  void preservesWhiteCanvasWhenUploadingLogo() throws Exception {
     var sourceImagePath = Path.of("..", "design", "logo - \u526f\u672c.png");
     var source = uploadDirectory.resolve("customer-service-logo.png");
     Files.copy(sourceImagePath, source, StandardCopyOption.REPLACE_EXISTING);
@@ -62,8 +66,8 @@ class ProjectLogoImageServiceTest {
 
     var original = ImageIO.read(sourceImagePath.toFile());
     var logo = ImageIO.read(uploadDirectory.resolve(processed.fileName()).toFile());
-    assertThat(rgbAt(logo, 0, 0)).isEqualTo(0xffff00);
-    assertThat(rgbAt(logo, 100, 100)).isEqualTo(0xffff00);
+    assertThat(rgbAt(logo, 0, 0)).isEqualTo(rgbAt(original, 0, 0));
+    assertThat(rgbAt(logo, 100, 100)).isEqualTo(rgbAt(original, 100, 100));
     assertThat(rgbAt(logo, 390, 620)).isEqualTo(rgbAt(original, 390, 620));
     assertThat(rgbAt(logo, 627, 520)).isEqualTo(rgbAt(original, 627, 520));
     assertThat(rgbAt(logo, 900, 620)).isEqualTo(rgbAt(original, 900, 620));

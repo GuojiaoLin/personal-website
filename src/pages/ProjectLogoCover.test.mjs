@@ -53,10 +53,16 @@ assert.match(
   'Admin project upload helper text should clearly allow PNG and JPG logo assets.',
 );
 
+assert.doesNotMatch(
+  adminSource,
+  /自动替换背景为黄色|黄底 PNG/,
+  'Admin project upload copy should not claim that uploads are rewritten onto a yellow background.',
+);
+
 assert.match(
   adminSource,
-  /自动替换背景为黄色/,
-  'Admin project upload helper text should explain that uploaded logos are processed onto a yellow background.',
+  /保留原图背景/,
+  'Admin project upload helper text should explain that uploaded logos keep their original background.',
 );
 
 assert.doesNotMatch(

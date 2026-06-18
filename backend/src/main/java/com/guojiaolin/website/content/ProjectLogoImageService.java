@@ -1,6 +1,7 @@
 package com.guojiaolin.website.content;
 
 import com.guojiaolin.website.common.ImageOrientation;
+import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -8,7 +9,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayDeque;
 import javax.imageio.ImageIO;
 import org.springframework.stereotype.Service;
 
@@ -16,13 +16,12 @@ import org.springframework.stereotype.Service;
 public class ProjectLogoImageService {
 
   private static final int MAX_SIDE = 1600;
-  private static final int YELLOW_RGB = 0xffff00;
-  private static final int EDGE_BACKGROUND_DISTANCE = 130;
-  private static final int LIGHT_CANVAS_BACKGROUND_DISTANCE = 18;
-  private static final int LOCAL_BACKGROUND_DISTANCE = 58;
 
   public ProcessedProjectLogo process(Path source, Path directory, String fileName, String mimeType) {
     var originalSize = sizeOf(source);
+    if (!canRewrite(mimeType)) {
+      return new ProcessedProjectLogo(fileName, mimeType, originalSize);
+    }
 
     try {
       var sourceImage = ImageIO.read(source.toFile());
@@ -32,243 +31,62 @@ public class ProjectLogoImageService {
 
       var orientedImage = ImageOrientation.applyExifOrientation(source, sourceImage);
       var resizedImage = resizeToMaxSide(orientedImage);
-      var logoImage = paintOnYellowBackground(resizedImage);
-      var processedFileName = resolveAvailablePngFileName(directory, source, fileName);
-      var destination = directory.resolve(processedFileName).normalize();
 
-      if (!destination.startsWith(directory)) {
-        return new ProcessedProjectLogo(fileName, mimeType, originalSize);
-      }
-
-      var temporary = Files.createTempFile(directory, "project-logo-", ".png");
       try {
-        ImageIO.write(logoImage, "png", temporary.toFile());
-        Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
-        if (!destination.equals(source)) {
-          Files.deleteIfExists(source);
+        if (orientedImage == sourceImage && resizedImage == orientedImage) {
+          return new ProcessedProjectLogo(fileName, mimeType, originalSize);
         }
+
+        var destination = directory.resolve(fileName).normalize();
+        if (!destination.startsWith(directory)) {
+          return new ProcessedProjectLogo(fileName, mimeType, originalSize);
+        }
+
+        var temporary = Files.createTempFile(directory, "project-logo-", extensionFor(mimeType));
+        try {
+          var writableImage = imageForFormat(resizedImage, mimeType);
+          try {
+            if (!ImageIO.write(writableImage, formatName(mimeType), temporary.toFile())) {
+              return new ProcessedProjectLogo(fileName, mimeType, originalSize);
+            }
+          } finally {
+            if (writableImage != resizedImage) {
+              writableImage.flush();
+            }
+          }
+
+          Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+          Files.deleteIfExists(temporary);
+        }
+
+        return new ProcessedProjectLogo(fileName, mimeType, Files.size(destination));
       } finally {
-        Files.deleteIfExists(temporary);
-        logoImage.flush();
-        resizedImage.flush();
+        if (resizedImage != orientedImage) {
+          resizedImage.flush();
+        }
         if (orientedImage != sourceImage) {
           orientedImage.flush();
         }
         sourceImage.flush();
       }
-
-      return new ProcessedProjectLogo(processedFileName, "image/png", Files.size(destination));
     } catch (IOException | RuntimeException error) {
       return new ProcessedProjectLogo(fileName, mimeType, originalSize);
     }
   }
 
-  private BufferedImage paintOnYellowBackground(BufferedImage source) {
-    var width = source.getWidth();
-    var height = source.getHeight();
-    var background = findEdgeConnectedBackground(source);
-    var target = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-
-    for (var y = 0; y < height; y += 1) {
-      for (var x = 0; x < width; x += 1) {
-        var argb = source.getRGB(x, y);
-        var alpha = alphaOf(argb);
-
-        if (background[y * width + x] || alpha < 16) {
-          target.setRGB(x, y, YELLOW_RGB);
-        } else if (alpha < 255) {
-          target.setRGB(x, y, blendOverYellow(argb, alpha));
-        } else {
-          target.setRGB(x, y, argb & 0xffffff);
-        }
-      }
-    }
-
-    return target;
-  }
-
-  private boolean[] findEdgeConnectedBackground(BufferedImage image) {
-    var width = image.getWidth();
-    var height = image.getHeight();
-    var background = new boolean[width * height];
-    var queue = new ArrayDeque<Integer>();
-    var profile = backgroundProfileFor(image);
-
-    for (var x = 0; x < width; x += 1) {
-      seedBackground(image, background, queue, profile, x, 0);
-      seedBackground(image, background, queue, profile, x, height - 1);
-    }
-    for (var y = 1; y < height - 1; y += 1) {
-      seedBackground(image, background, queue, profile, 0, y);
-      seedBackground(image, background, queue, profile, width - 1, y);
-    }
-
-    if (queue.isEmpty()) {
-      seedBackgroundUnchecked(background, queue, 0);
-      seedBackgroundUnchecked(background, queue, width - 1);
-      seedBackgroundUnchecked(background, queue, (height - 1) * width);
-      seedBackgroundUnchecked(background, queue, height * width - 1);
-    }
-
-    while (!queue.isEmpty()) {
-      var index = queue.removeFirst();
-      var x = index % width;
-      var y = index / width;
-      var current = image.getRGB(x, y);
-
-      addNeighbor(image, background, queue, profile, current, x - 1, y);
-      addNeighbor(image, background, queue, profile, current, x + 1, y);
-      addNeighbor(image, background, queue, profile, current, x, y - 1);
-      addNeighbor(image, background, queue, profile, current, x, y + 1);
-    }
-
-    return background;
-  }
-
-  private BackgroundProfile backgroundProfileFor(BufferedImage image) {
-    var edgeColors = sampleCornerBackgroundColors(image);
-    var lightCanvas = isLightNeutralCanvas(edgeColors);
-
-    return new BackgroundProfile(
-      edgeColors,
-      lightCanvas ? LIGHT_CANVAS_BACKGROUND_DISTANCE : EDGE_BACKGROUND_DISTANCE,
-      !lightCanvas
-    );
-  }
-
-  private boolean isLightNeutralCanvas(int[] colors) {
-    for (var color : colors) {
-      var red = (color >> 16) & 0xff;
-      var green = (color >> 8) & 0xff;
-      var blue = color & 0xff;
-      var max = Math.max(red, Math.max(green, blue));
-      var min = Math.min(red, Math.min(green, blue));
-
-      if (min < 240 || max - min > 18) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private void seedBackground(
-    BufferedImage image,
-    boolean[] background,
-    ArrayDeque<Integer> queue,
-    BackgroundProfile profile,
-    int x,
-    int y
-  ) {
-    var rgb = image.getRGB(x, y);
-    if (alphaOf(rgb) < 250 || isCloseToEdgeBackground(rgb, profile)) {
-      seedBackgroundUnchecked(background, queue, y * image.getWidth() + x);
-    }
-  }
-
-  private void seedBackgroundUnchecked(boolean[] background, ArrayDeque<Integer> queue, int index) {
-    if (!background[index]) {
-      background[index] = true;
-      queue.add(index);
-    }
-  }
-
-  private void addNeighbor(
-    BufferedImage image,
-    boolean[] background,
-    ArrayDeque<Integer> queue,
-    BackgroundProfile profile,
-    int currentRgb,
-    int x,
-    int y
-  ) {
-    if (x < 0 || y < 0 || x >= image.getWidth() || y >= image.getHeight()) {
-      return;
-    }
-
-    var index = y * image.getWidth() + x;
-    if (background[index]) {
-      return;
-    }
-
-    var nextRgb = image.getRGB(x, y);
-    if (alphaOf(nextRgb) < 250
-      || profile.allowLocalExpansion() && colorDistance(nextRgb, currentRgb) <= LOCAL_BACKGROUND_DISTANCE
-      || isCloseToEdgeBackground(nextRgb, profile)) {
-      background[index] = true;
-      queue.add(index);
-    }
-  }
-
-  private int[] sampleCornerBackgroundColors(BufferedImage image) {
-    var width = image.getWidth();
-    var height = image.getHeight();
-    var sampleWidth = Math.max(1, Math.min(12, width / 8));
-    var sampleHeight = Math.max(1, Math.min(12, height / 8));
-
-    return new int[] {
-      averageRegion(image, 0, 0, sampleWidth, sampleHeight),
-      averageRegion(image, width - sampleWidth, 0, sampleWidth, sampleHeight),
-      averageRegion(image, 0, height - sampleHeight, sampleWidth, sampleHeight),
-      averageRegion(image, width - sampleWidth, height - sampleHeight, sampleWidth, sampleHeight)
-    };
-  }
-
-  private int averageRegion(BufferedImage image, int startX, int startY, int width, int height) {
-    long red = 0;
-    long green = 0;
-    long blue = 0;
-    var count = 0;
-
-    for (var y = startY; y < startY + height; y += 1) {
-      for (var x = startX; x < startX + width; x += 1) {
-        var rgb = image.getRGB(x, y);
-        if (alphaOf(rgb) < 16) {
-          continue;
-        }
-
-        red += (rgb >> 16) & 0xff;
-        green += (rgb >> 8) & 0xff;
-        blue += rgb & 0xff;
-        count += 1;
-      }
-    }
-
-    if (count == 0) {
-      return YELLOW_RGB;
-    }
-
-    return ((int) (red / count) << 16) | ((int) (green / count) << 8) | (int) (blue / count);
-  }
-
-  private boolean isCloseToEdgeBackground(int rgb, BackgroundProfile profile) {
-    for (var edgeColor : profile.edgeColors()) {
-      if (colorDistance(rgb, edgeColor) <= profile.edgeDistance()) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private int colorDistance(int first, int second) {
-    var red = ((first >> 16) & 0xff) - ((second >> 16) & 0xff);
-    var green = ((first >> 8) & 0xff) - ((second >> 8) & 0xff);
-    var blue = (first & 0xff) - (second & 0xff);
-    return (int) Math.round(Math.sqrt(red * red + green * green + blue * blue));
-  }
-
-  private int blendOverYellow(int argb, int alpha) {
-    var red = ((argb >> 16) & 0xff) * alpha + 255 * (255 - alpha);
-    var green = ((argb >> 8) & 0xff) * alpha + 255 * (255 - alpha);
-    var blue = (argb & 0xff) * alpha;
-    return ((red / 255) << 16) | ((green / 255) << 8) | (blue / 255);
+  private boolean canRewrite(String mimeType) {
+    return "image/png".equals(mimeType) || "image/jpeg".equals(mimeType);
   }
 
   private BufferedImage resizeToMaxSide(BufferedImage source) {
     var width = source.getWidth();
     var height = source.getHeight();
     var scale = Math.min(1d, (double) MAX_SIDE / Math.max(width, height));
+    if (scale >= 1d) {
+      return source;
+    }
+
     var targetWidth = Math.max(1, (int) Math.round(width * scale));
     var targetHeight = Math.max(1, (int) Math.round(height * scale));
     var target = new BufferedImage(
@@ -293,27 +111,30 @@ public class ProjectLogoImageService {
     graphics.drawImage(source, 0, 0, targetWidth, targetHeight, null);
   }
 
-  private String resolveAvailablePngFileName(Path directory, Path source, String fileName) {
-    var dotIndex = fileName.lastIndexOf('.');
-    var baseName = dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
-    var candidate = baseName + ".png";
-    var counter = 2;
-
-    while (candidateExistsForAnotherSource(directory, source, candidate)) {
-      candidate = "%s-%d.png".formatted(baseName, counter);
-      counter += 1;
+  private BufferedImage imageForFormat(BufferedImage source, String mimeType) {
+    if (!"image/jpeg".equals(mimeType) || !source.getColorModel().hasAlpha()) {
+      return source;
     }
 
-    return candidate;
+    var target = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
+    var graphics = target.createGraphics();
+    try {
+      graphics.setColor(Color.WHITE);
+      graphics.fillRect(0, 0, source.getWidth(), source.getHeight());
+      graphics.drawImage(source, 0, 0, null);
+    } finally {
+      graphics.dispose();
+    }
+
+    return target;
   }
 
-  private boolean candidateExistsForAnotherSource(Path directory, Path source, String candidate) {
-    var destination = directory.resolve(candidate).normalize();
-    return Files.exists(destination) && !destination.equals(source);
+  private String formatName(String mimeType) {
+    return "image/jpeg".equals(mimeType) ? "jpg" : "png";
   }
 
-  private int alphaOf(int argb) {
-    return (argb >>> 24) & 0xff;
+  private String extensionFor(String mimeType) {
+    return "image/jpeg".equals(mimeType) ? ".jpg" : ".png";
   }
 
   private long sizeOf(Path source) {
@@ -322,9 +143,6 @@ public class ProjectLogoImageService {
     } catch (IOException error) {
       return 0L;
     }
-  }
-
-  private record BackgroundProfile(int[] edgeColors, int edgeDistance, boolean allowLocalExpansion) {
   }
 
   public record ProcessedProjectLogo(String fileName, String mimeType, long sizeBytes) {

@@ -771,7 +771,7 @@ class ContentApiIntegrationTest {
   }
 
   @Test
-  void projectCoverUploadOptimizesLargeImages() throws Exception {
+  void projectCoverUploadLimitsLargeImageDimensions() throws Exception {
     var session = login();
     var fileName = "large project cover %d.png".formatted(System.nanoTime());
     var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
@@ -792,19 +792,22 @@ class ContentApiIntegrationTest {
 
     var optimizedPath = Path.of("target/test-uploads/projects").resolve(JsonField.extract(response, "fileName"));
     assertImageLongestSideAtMost(optimizedPath, 1600);
-    assertThat(Files.size(optimizedPath)).isLessThan((long) originalBytes.length);
   }
 
   @Test
-  void projectCoverUploadProcessesGeneratedLogoImage() throws Exception {
+  void projectCoverUploadPreservesGeneratedLogoBackground() throws Exception {
     var session = login();
     var fileName = "generated logo %d.png".formatted(System.nanoTime());
+    var sourcePath = Path.of("..", "design", "logo.png");
     var image = new MockMultipartFile(
       "file",
       fileName,
       "image/png",
-      Files.readAllBytes(Path.of("..", "design", "logo.png"))
+      Files.readAllBytes(sourcePath)
     );
+    var original = ImageIO.read(sourcePath.toFile());
+    var originalCorner = original.getRGB(0, 0) & 0xffffff;
+    original.flush();
 
     var response = mockMvc.perform(multipart("/api/admin/projects/assets")
         .file(image)
@@ -820,7 +823,8 @@ class ContentApiIntegrationTest {
 
     var processedPath = Path.of("target/test-uploads/projects").resolve(JsonField.extract(response, "fileName"));
     var logo = ImageIO.read(processedPath.toFile());
-    assertThat(logo.getRGB(0, 0) & 0xffffff).isEqualTo(0xffff00);
+    assertThat(logo.getRGB(0, 0) & 0xffffff).isEqualTo(originalCorner);
+    assertThat(logo.getRGB(0, 0) & 0xffffff).isNotEqualTo(0xffff00);
     logo.flush();
   }
 
